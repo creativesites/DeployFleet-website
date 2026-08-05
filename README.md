@@ -115,7 +115,7 @@ poster crop would be a nice follow-up.
 (`LIVE_DEMO_URL` in `src/lib/nav.ts`) links straight to the shared live
 demo instance (`http://199.192.23.46:4169/odoo`), which has one-click
 login for the Owner/Dispatcher/Driver views. No form, no gate — this is a
-deliberate, explicit choice for now, not a gap.
+deliberate, explicit choice for now, not a gap. a marketing decision 
 
 **Planned, once a lead-capture backend exists:** collect the visitor's
 name/company/phone *first* (the existing `/demo` role cards and copy stay,
