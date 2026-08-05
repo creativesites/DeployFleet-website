@@ -1,0 +1,155 @@
+@import "tailwindcss";
+
+/*
+ * DeployFleet brand tokens.
+ * Source of truth: the DeployFleet brand style guide + the
+ * "DeployFleet — Mission Control for African Trucking" logo lockup
+ * (public/brand/). Reference these tokens from components; don't
+ * hardcode hex values.
+ */
+:root {
+  --df-navy: #0a1128;
+  --df-navy-2: #0f1b3d;
+  --df-cyan: #00d2ff;
+  --df-teal: #0b93d3;
+  --df-canvas: #f8fafc;
+  --df-card: #ffffff;
+  --df-border: #e2e8f0;
+  --df-body: #334155;
+  --df-muted: #64748b;
+  --df-amber: #f59e0b;
+  --df-emerald: #10b981;
+  --df-danger: #dc2626;
+  /* Reserved for AI-generated/AI-authored content only, mirroring the
+     product's own convention — never used decoratively. */
+  --df-ai-violet: #7c3aed;
+
+  --df-gradient-brand: linear-gradient(135deg, var(--df-cyan) 0%, var(--df-teal) 100%);
+  --df-gradient-brand-wide: linear-gradient(135deg, #22d38a 0%, var(--df-cyan) 45%, var(--df-teal) 100%);
+
+  --df-radius-sm: 8px;
+  --df-radius-md: 12px;
+  --df-radius-lg: 16px;
+  --df-radius-xl: 24px;
+
+  --df-shadow-card: 0 10px 30px -10px rgba(10, 17, 40, 0.08);
+  --df-shadow-card-hover: 0 20px 45px -15px rgba(10, 17, 40, 0.16);
+  --df-shadow-cta: 0 12px 30px -8px rgba(0, 210, 255, 0.35);
+}
+
+@theme inline {
+  --color-navy: var(--df-navy);
+  --color-navy-2: var(--df-navy-2);
+  --color-cyan: var(--df-cyan);
+  --color-teal: var(--df-teal);
+  --color-canvas: var(--df-canvas);
+  --color-card: var(--df-card);
+  --color-border: var(--df-border);
+  --color-body: var(--df-body);
+  --color-muted: var(--df-muted);
+  --color-amber: var(--df-amber);
+  --color-emerald: var(--df-emerald);
+  --color-danger: var(--df-danger);
+  --color-ai-violet: var(--df-ai-violet);
+
+  --font-sans: var(--font-inter);
+
+  --radius-df-sm: var(--df-radius-sm);
+  --radius-df-md: var(--df-radius-md);
+  --radius-df-lg: var(--df-radius-lg);
+  --radius-df-xl: var(--df-radius-xl);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--df-canvas);
+  color: var(--df-body);
+  font-family: var(--font-inter), "Inter", system-ui, -apple-system, sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  color: var(--df-navy);
+  font-family: var(--font-inter), "Inter", system-ui, -apple-system, sans-serif;
+}
+
+.text-gradient-brand {
+  background: var(--df-gradient-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.bg-gradient-brand {
+  background: var(--df-gradient-brand);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: var(--df-gradient-brand);
+  color: #ffffff;
+  font-weight: 600;
+  padding: 0.9rem 1.75rem;
+  border-radius: var(--df-radius-md);
+  border: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--df-shadow-cta);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: #f1f5f9;
+  color: var(--df-navy);
+  font-weight: 600;
+  padding: 0.9rem 1.75rem;
+  border-radius: var(--df-radius-md);
+  border: 1px solid var(--df-border);
+  transition: border-color 0.2s ease, background 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-secondary:hover {
+  border-color: var(--df-teal);
+  background: #ffffff;
+}
+
+.card-surface {
+  background: var(--df-card);
+  border: 1px solid var(--df-border);
+  border-radius: var(--df-radius-lg);
+  box-shadow: var(--df-shadow-card);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+}
+
+.card-surface:hover {
+  box-shadow: var(--df-shadow-card-hover);
+  border-color: var(--df-teal);
+  transform: translateY(-2px);
+}
+
+.section-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--df-teal);
+}
