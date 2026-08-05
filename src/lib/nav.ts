@@ -54,6 +54,13 @@ export const footerNav = {
   ] as NavLink[],
 };
 
+// TODO(lead-capture backend): once a backend exists to collect and store
+// leads, gate this behind the /demo form — collect name/company/phone
+// first, THEN redirect here (or to a personalized one-click login link),
+// instead of linking straight to the shared live demo like this. See
+// README.md "Planned: gated demo access" for the full plan.
+export const LIVE_DEMO_URL = "http://199.192.23.46:4169/odoo";
+
 export const WHATSAPP_NUMBER = "260979046745";
 export const WHATSAPP_MESSAGE = "Hi DeployFleet, I'd like to know more about the platform.";
 export const whatsappHref = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(

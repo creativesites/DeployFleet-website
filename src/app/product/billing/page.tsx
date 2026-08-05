@@ -13,12 +13,16 @@ export default function BillingPage() {
       eyebrow="Billing & Customers"
       title="Invoicing that starts from a completed trip, not a spreadsheet."
       intro="A delivered shipment turns into an invoice automatically, built from real rate cards and contract terms. Customers can check shipment status themselves instead of calling you, and you get one view of every customer's contracts, active shipments, and outstanding balance."
-      screenshotLabel="Invoice Ledger — with tax-submission status"
-      screenshotHint="public/screenshots/invoice-ledger.png"
+      screenshotLabel="Financial Intelligence — revenue, margin, and cost per kilometre"
+      screenshotSrc="/screenshots/financial-intelligence.png"
       features={[
         {
           title: "Automatic invoicing",
           body: "Completed trips flow straight into an invoice against the right rate card and contract — no re-keying numbers from a trip sheet.",
+        },
+        {
+          title: "ZRA Smart Invoice, built in",
+          body: "In Zambia, invoices submit to ZRA's Smart Invoice system as part of the normal billing flow — not a separate manual step at month-end.",
         },
         {
           title: "Customer 360",

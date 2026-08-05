@@ -1,4 +1,4 @@
-import ScreenshotPlaceholder from "@/components/ScreenshotPlaceholder";
+import Screenshot from "@/components/Screenshot";
 
 const points = [
   {
@@ -19,7 +19,7 @@ export default function TrustSection() {
   return (
     <section className="bg-card py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="grid items-center gap-12 lg:grid-cols-2">
+        <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
           <div>
             <span className="section-eyebrow">Trust & compliance</span>
             <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
@@ -43,10 +43,11 @@ export default function TrustSection() {
           </div>
 
           <div className="card-surface p-2 sm:p-3">
-            <ScreenshotPlaceholder
-              label="Compliance Center — traffic-light wall"
-              hint="public/screenshots/compliance-center.png"
-              aspect="video"
+            <Screenshot
+              src="/screenshots/compliance-center.png"
+              alt="Compliance Center — traffic-light wall of vehicle and driver documents"
+              width={1376}
+              height={768}
             />
           </div>
         </div>

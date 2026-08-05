@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { WHATSAPP_NUMBER, whatsappHref } from "@/lib/nav";
 
@@ -20,7 +21,7 @@ export default function CtaSection() {
 
   return (
     <section className="mx-auto max-w-5xl px-4 py-20 sm:px-6 lg:px-8" id="get-started">
-      <div className="card-surface grid gap-10 p-8 sm:p-12 lg:grid-cols-2 lg:gap-16">
+      <div className="card-surface grid grid-cols-1 gap-10 p-8 sm:p-12 lg:grid-cols-2 lg:gap-16">
         <div>
           <span className="section-eyebrow">Get started</span>
           <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
@@ -31,14 +32,22 @@ export default function CtaSection() {
             we&apos;ll set up a trial with your own trucks and routes loaded
             in — not a generic demo.
           </p>
-          <a
-            href={whatsappHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-secondary mt-6 inline-flex"
-          >
-            Prefer WhatsApp? Chat with us directly
-          </a>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <a
+              href={whatsappHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-secondary inline-flex"
+            >
+              Prefer WhatsApp? Chat with us directly
+            </a>
+            <Link href="/demo" className="inline-flex items-center gap-1 px-2 text-sm font-semibold text-teal">
+              Or explore the live demo now
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M3 7H11M11 7L7.5 3.5M11 7L7.5 10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </Link>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

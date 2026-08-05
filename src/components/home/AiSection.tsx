@@ -13,7 +13,7 @@ const agents = [
 export default function AiSection() {
   return (
     <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-      <div className="grid items-center gap-12 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
         <div className="order-2 lg:order-1">
           <div className="card-surface border-ai-violet/20 p-2 sm:p-3">
             <ScreenshotPlaceholder

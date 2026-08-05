@@ -13,8 +13,8 @@ export default function DispatchPage() {
       eyebrow="Dispatch & Driver Management"
       title="Which load should go next? Answered in one tap."
       intro="The Dispatch Board replaces phone calls and WhatsApp voice notes with a single working view: every shipment waiting on assignment, ranked driver and truck suggestions, and a one-tap confirm — with compliance checked before it happens, not after."
-      screenshotLabel="Dispatch Board — expanded shipment with ranked candidates"
-      screenshotHint="public/screenshots/dispatch-board-expanded.png"
+      screenshotLabel="Dispatch Board — shipment queue and trip board"
+      screenshotSrc="/screenshots/dispatch-board.png"
       features={[
         {
           title: "Ranked suggestions, not a blank form",

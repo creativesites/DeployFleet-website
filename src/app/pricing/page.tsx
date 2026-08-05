@@ -42,7 +42,7 @@ export default function PricingPage() {
         </p>
       </div>
 
-      <div className="mt-14 grid gap-6 lg:grid-cols-3">
+      <div className="mt-14 grid grid-cols-1 gap-6 lg:grid-cols-3">
         {tiers.map((tier) => (
           <div key={tier.name} className="card-surface flex flex-col p-8">
             <h2 className="text-lg font-semibold text-navy">{tier.name}</h2>

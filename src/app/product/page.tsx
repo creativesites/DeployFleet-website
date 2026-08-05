@@ -23,7 +23,7 @@ export default function ProductOverviewPage() {
         </p>
       </div>
 
-      <div className="mt-14 grid gap-6 sm:grid-cols-2">
+      <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2">
         {productLinks.map((link) => (
           <Link key={link.href} href={link.href} className="card-surface p-6">
             <h2 className="text-lg font-semibold text-navy">{link.label}</h2>

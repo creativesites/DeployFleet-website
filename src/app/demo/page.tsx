@@ -1,46 +1,64 @@
 import type { Metadata } from "next";
-import DemoForm from "@/components/DemoForm";
+import { LIVE_DEMO_URL, whatsappHref } from "@/lib/nav";
 
 export const metadata: Metadata = {
-  title: "Book a Demo",
+  title: "Explore the Live Demo",
   description:
-    "See DeployFleet running with your own trucks and routes loaded in — a real walkthrough, not a generic sales call.",
+    "Jump straight into a live, running DeployFleet instance — one-click login for the Owner, Dispatcher, and Driver views.",
 };
 
-const expectations = [
-  "A 20-minute walkthrough on your own screen or ours",
-  "Your actual trucks, routes, and customers loaded in where possible",
-  "A straight answer on whether it fits your fleet — including if it doesn't yet",
+const roles = [
+  { name: "Owner / Fleet Manager", body: "Mission Control, fleet-wide KPIs, and every workspace." },
+  { name: "Dispatcher", body: "The Dispatch Board — book, assign, and track shipments." },
+  { name: "Driver", body: "What a driver sees for their own trips and documents." },
 ];
 
 export default function DemoPage() {
   return (
-    <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
-      <div className="grid gap-14 lg:grid-cols-2 lg:items-start">
-        <div>
-          <span className="section-eyebrow">Book a demo</span>
-          <h1 className="mt-4 text-4xl font-bold leading-tight text-navy sm:text-5xl">
-            See it with your own fleet.
-          </h1>
-          <p className="mt-6 text-lg leading-relaxed text-body">
-            Tell us a bit about your operation and we&apos;ll set up a
-            walkthrough built around it — not a generic slide deck.
-          </p>
+    <div className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 lg:px-8 lg:py-24">
+      <span className="section-eyebrow justify-center">Live demo</span>
+      <h1 className="mt-4 text-4xl font-bold leading-tight text-navy sm:text-5xl">
+        See the real thing, right now.
+      </h1>
+      <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-body">
+        This isn&apos;t a sandbox with fake data bolted on afterwards — it&apos;s
+        a live DeployFleet instance running a full demo fleet. Pick a role
+        below and you&apos;re in, one click, no sign-up.
+      </p>
 
-          <ul className="mt-8 space-y-4">
-            {expectations.map((item) => (
-              <li key={item} className="flex items-start gap-3 text-sm text-body">
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="mt-0.5 shrink-0 text-emerald" aria-hidden="true">
-                  <circle cx="9" cy="9" r="8" stroke="currentColor" strokeWidth="1.4" />
-                  <path d="M5.5 9.3l2.3 2.3 5-5.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
+      <a
+        href={LIVE_DEMO_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="btn-primary mt-8 inline-flex text-base"
+      >
+        Launch the Live Demo
+      </a>
 
-        <DemoForm />
+      <div className="mt-14 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {roles.map((role) => (
+          <div key={role.name} className="card-surface p-5 text-left">
+            <p className="text-sm font-semibold text-navy">{role.name}</p>
+            <p className="mt-2 text-sm leading-relaxed text-body">{role.body}</p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-4 text-sm text-muted">
+        Once you&apos;re in, the login screen has a one-click option for each
+        role — no password to remember.
+      </p>
+
+      <div className="mt-14 rounded-df-lg border border-border bg-card p-6 text-left sm:p-8">
+        <p className="text-sm font-semibold text-navy">
+          Want a walkthrough with your own fleet&apos;s data instead?
+        </p>
+        <p className="mt-2 text-sm leading-relaxed text-body">
+          Message us and we&apos;ll set one up — trucks, routes, and
+          customers loaded in, not a generic demo.
+        </p>
+        <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="btn-secondary mt-4 inline-flex">
+          Chat on WhatsApp
+        </a>
       </div>
     </div>
   );

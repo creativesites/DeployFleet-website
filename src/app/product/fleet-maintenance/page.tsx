@@ -13,8 +13,8 @@ export default function FleetMaintenancePage() {
       eyebrow="Fleet & Maintenance"
       title="Know which trucks are making you money."
       intro="Every truck gets one consolidated view: current trip, service due, tyre condition, recent fuel logs, and insurance status. Fleet-wide, a maintenance planner and cost tools turn scattered job cards and receipts into a real picture of what each truck actually costs to run."
-      screenshotLabel="Fleet Command Center — Vehicle 360 view"
-      screenshotHint="public/screenshots/fleet-command-center.png"
+      screenshotLabel="Fleet Maintenance Center — timeline and repair ledger"
+      screenshotSrc="/screenshots/maintenance-center.png"
       features={[
         {
           title: "Vehicle 360",

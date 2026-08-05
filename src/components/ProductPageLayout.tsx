@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Screenshot from "@/components/Screenshot";
 import ScreenshotPlaceholder from "@/components/ScreenshotPlaceholder";
 import { whatsappHref } from "@/lib/nav";
 
@@ -13,6 +14,8 @@ type ProductPageLayoutProps = {
   intro: string;
   screenshotLabel: string;
   screenshotHint?: string;
+  screenshotSrc?: string;
+  screenshotDims?: { width: number; height: number };
   features: Feature[];
   note?: string;
 };
@@ -23,6 +26,8 @@ export default function ProductPageLayout({
   intro,
   screenshotLabel,
   screenshotHint,
+  screenshotSrc,
+  screenshotDims = { width: 1376, height: 768 },
   features,
   note,
 }: ProductPageLayoutProps) {
@@ -37,10 +42,19 @@ export default function ProductPageLayout({
       </div>
 
       <div className="card-surface mt-10 p-2 sm:p-3">
-        <ScreenshotPlaceholder label={screenshotLabel} hint={screenshotHint} aspect="video" />
+        {screenshotSrc ? (
+          <Screenshot
+            src={screenshotSrc}
+            alt={screenshotLabel}
+            width={screenshotDims.width}
+            height={screenshotDims.height}
+          />
+        ) : (
+          <ScreenshotPlaceholder label={screenshotLabel} hint={screenshotHint} aspect="video" />
+        )}
       </div>
 
-      <div className="mt-14 grid gap-6 sm:grid-cols-2">
+      <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2">
         {features.map((feature) => (
           <div key={feature.title} className="card-surface p-6">
             <h3 className="text-base font-semibold text-navy">{feature.title}</h3>

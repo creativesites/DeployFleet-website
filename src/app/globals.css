@@ -10,6 +10,9 @@
 :root {
   --df-navy: #0a1128;
   --df-navy-2: #0f1b3d;
+  /* Matches the dark-background logo lockup — used for the hero band only,
+     not a general dark-mode token (this site is light-canvas otherwise). */
+  --df-hero-bg: #060a16;
   --df-cyan: #00d2ff;
   --df-teal: #0b93d3;
   --df-canvas: #f8fafc;
@@ -60,96 +63,110 @@
   --radius-df-xl: var(--df-radius-xl);
 }
 
-html {
-  scroll-behavior: smooth;
+/*
+ * IMPORTANT: everything below must stay inside @layer base / @layer
+ * components. Tailwind v4 uses real CSS Cascade Layers — any rule written
+ * OUTSIDE a layer is treated as unlayered and beats every layered rule
+ * (including Tailwind's own utilities) regardless of specificity. An
+ * unlayered `h1 { color: ... }` here once silently defeated `text-white`
+ * on the hero heading — keep new base/component styles layered so
+ * utility classes on an element can still override them, same as normal
+ * Tailwind behavior.
+ */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: var(--df-canvas);
+    color: var(--df-body);
+    font-family: var(--font-inter), "Inter", system-ui, -apple-system, sans-serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: var(--df-navy);
+    font-family: var(--font-inter), "Inter", system-ui, -apple-system, sans-serif;
+  }
 }
 
-body {
-  background: var(--df-canvas);
-  color: var(--df-body);
-  font-family: var(--font-inter), "Inter", system-ui, -apple-system, sans-serif;
-}
+@layer components {
+  .text-gradient-brand {
+    background: var(--df-gradient-brand);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
 
-h1,
-h2,
-h3,
-h4 {
-  color: var(--df-navy);
-  font-family: var(--font-inter), "Inter", system-ui, -apple-system, sans-serif;
-}
+  .bg-gradient-brand {
+    background: var(--df-gradient-brand);
+  }
 
-.text-gradient-brand {
-  background: var(--df-gradient-brand);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: var(--df-gradient-brand);
+    color: #ffffff;
+    font-weight: 600;
+    padding: 0.9rem 1.75rem;
+    border-radius: var(--df-radius-md);
+    border: none;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    text-align: center;
+  }
 
-.bg-gradient-brand {
-  background: var(--df-gradient-brand);
-}
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--df-shadow-cta);
+  }
 
-.btn-primary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  background: var(--df-gradient-brand);
-  color: #ffffff;
-  font-weight: 600;
-  padding: 0.9rem 1.75rem;
-  border-radius: var(--df-radius-md);
-  border: none;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  white-space: nowrap;
-}
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: #f1f5f9;
+    color: var(--df-navy);
+    font-weight: 600;
+    padding: 0.9rem 1.75rem;
+    border-radius: var(--df-radius-md);
+    border: 1px solid var(--df-border);
+    transition: border-color 0.2s ease, background 0.2s ease;
+    text-align: center;
+  }
 
-.btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--df-shadow-cta);
-}
+  .btn-secondary:hover {
+    border-color: var(--df-teal);
+    background: #ffffff;
+  }
 
-.btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  background: #f1f5f9;
-  color: var(--df-navy);
-  font-weight: 600;
-  padding: 0.9rem 1.75rem;
-  border-radius: var(--df-radius-md);
-  border: 1px solid var(--df-border);
-  transition: border-color 0.2s ease, background 0.2s ease;
-  white-space: nowrap;
-}
+  .card-surface {
+    background: var(--df-card);
+    border: 1px solid var(--df-border);
+    border-radius: var(--df-radius-lg);
+    box-shadow: var(--df-shadow-card);
+    transition: box-shadow 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+  }
 
-.btn-secondary:hover {
-  border-color: var(--df-teal);
-  background: #ffffff;
-}
+  .card-surface:hover {
+    box-shadow: var(--df-shadow-card-hover);
+    border-color: var(--df-teal);
+    transform: translateY(-2px);
+  }
 
-.card-surface {
-  background: var(--df-card);
-  border: 1px solid var(--df-border);
-  border-radius: var(--df-radius-lg);
-  box-shadow: var(--df-shadow-card);
-  transition: box-shadow 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
-}
-
-.card-surface:hover {
-  box-shadow: var(--df-shadow-card-hover);
-  border-color: var(--df-teal);
-  transform: translateY(-2px);
-}
-
-.section-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--df-teal);
+  .section-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--df-teal);
+  }
 }

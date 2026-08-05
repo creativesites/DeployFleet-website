@@ -1,10 +1,10 @@
-import ScreenshotPlaceholder from "@/components/ScreenshotPlaceholder";
+import Screenshot from "@/components/Screenshot";
 
 export default function SolutionSection() {
   return (
     <section className="bg-card py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="grid items-center gap-12 lg:grid-cols-2">
+        <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
           <div>
             <span className="section-eyebrow">The DeployFleet way</span>
             <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
@@ -25,10 +25,11 @@ export default function SolutionSection() {
           </div>
 
           <div className="card-surface p-2 sm:p-3">
-            <ScreenshotPlaceholder
-              label="Mission Control — attention strip + KPIs"
-              hint="public/screenshots/mission-control-wide.png"
-              aspect="video"
+            <Screenshot
+              src="/screenshots/mission-control.png"
+              alt="DeployFleet Mission Control dashboard — attention strip and KPI cards"
+              width={1312}
+              height={816}
             />
           </div>
         </div>

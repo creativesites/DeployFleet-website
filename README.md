@@ -66,14 +66,31 @@ that's ever regenerated, keep the on-page/visual framing consistent.
 
 The full site structure (nav, footer, homepage, and all `/product/*`,
 `/solutions`, `/pricing`, `/about`, `/resources`, `/demo`, `/contact`
-routes) is built and passes `next build`. What's still placeholder, by
-design, until real assets/decisions land:
+routes) is built and passes `next build`.
 
-- **Screenshots** — every product screenshot other than the hero is a
-  labeled dashed-border placeholder (`ScreenshotPlaceholder` component).
-  The label text names the exact screen expected (e.g. "Mission Control —
-  home dashboard"). Drop the real PNG into `public/screenshots/` and swap
-  in an `<Image>` — the label doubles as a shot list.
+**Screenshots** — like the hero asset, these are designed mockups of the
+product's screens (consistent branding, realistic demo data), not raw
+screen captures of the running app — worth knowing since they're a step
+more polished/idealized than what today's live demo actually looks like.
+Real captures can replace them 1:1 later with no layout changes needed.
+They now cover most of the site: `public/screenshots/` holds
+`mission-control.png`, `dispatch-board.png`, `dispatch-assign.png`,
+`fleet-command-center-list.png`, `vehicle-360.png`, `maintenance-center.png`,
+`compliance-center.png`, `financial-intelligence.png`, and `launcher.jpg`,
+wired into the homepage sections and product pages via the `Screenshot`
+component. `financial-intelligence.png` is currently reused on the Billing
+page as an approximate fit (it's Financial Intelligence, not literally the
+Invoice Ledger the label used to describe) — swap for a dedicated shot when
+one exists. **Still a labeled placeholder** (`ScreenshotPlaceholder`,
+label text doubles as the shot needed):
+- Homepage AI Copilot section — needs a Copilot Rail chat screenshot.
+- `/product/ai-copilot` — needs a Copilot Console screenshot.
+
+A narrow/mobile-format Mission Control video was mentioned as coming (to be
+pushed directly to the repo) but hasn't landed as of this commit — no slot
+assigned yet; likely candidate is a mobile-specific hero treatment or a
+dedicated "works on your phone" section once it arrives.
+
 - **WhatsApp number** — `WHATSAPP_NUMBER` in `src/lib/nav.ts` is set to
   `260979046745`, sourced from the number printed on the hero promo
   graphic. Not independently verified — confirm it's the right, current
@@ -81,11 +98,28 @@ design, until real assets/decisions land:
 - **Pricing** — no fixed numbers exist yet (open question in the product's
   own architecture docs). The pricing page intentionally shows tiers by
   what's included, not by price, funneling to a conversation instead.
-- **Lead capture** — both forms (`DemoForm`, the homepage `CtaSection`)
-  submit by opening a pre-filled WhatsApp chat client-side. No backend/CRM
-  integration exists yet; that's a deliberate MVP choice (WhatsApp is the
-  channel this audience actually uses), not an oversight — worth revisiting
-  once there's a CRM to route leads into.
+- **Lead capture** — both forms (`DemoForm` on `/contact`, the homepage
+  `CtaSection`) submit by opening a pre-filled WhatsApp chat client-side. No
+  backend/CRM integration exists yet; that's a deliberate MVP choice
+  (WhatsApp is the channel this audience actually uses), not an oversight.
+
+## Planned: gated demo access
+
+**Current behavior:** every "Book a Demo" / "Launch the Live Demo" CTA
+(`LIVE_DEMO_URL` in `src/lib/nav.ts`) links straight to the shared live
+demo instance (`http://199.192.23.46:4169/odoo`), which has one-click
+login for the Owner/Dispatcher/Driver views. No form, no gate — this is a
+deliberate, explicit choice for now, not a gap.
+
+**Planned, once a lead-capture backend exists:** collect the visitor's
+name/company/phone *first* (the existing `/demo` role cards and copy stay,
+just gated behind a short form), store the lead, *then* redirect to the
+live demo — or to a personalized one-click login link, if the product ever
+supports per-prospect demo instances the way `deployfleet_demo_zm`'s
+generation pattern already suggests is possible. Implementing this is a
+backend/CRM decision (where leads get stored, what "personalized instance"
+means operationally), not just a frontend change — flagged here so it
+isn't rediscovered from scratch later.
 
 ## Messaging guardrails
 
@@ -100,8 +134,11 @@ team first:
   accurate — they're real and demoable, but calibrated on synthetic demo
   data, not a real customer's history. Say "AI-powered insights," not
   "AI-proven forecasts."
-- Certified/live tax-authority (ZRA) integration — the module exists in
-  code but hasn't been verified against the real sandbox.
+- Don't call ZRA Smart Invoice submission "certified" or "government-
+  approved" — the integration is built and described on the Compliance/
+  Billing pages as a real capability, but it hasn't been verified against
+  ZRA's actual sandbox yet. Describing what it does is fine; claiming it's
+  officially certified is not.
 - Guaranteed offline support in the field — architecturally intended, not
   confirmed tested.
 

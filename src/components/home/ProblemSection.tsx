@@ -23,7 +23,7 @@ export default function ProblemSection() {
         </h2>
       </div>
 
-      <div className="mt-14 grid gap-6 md:grid-cols-3">
+      <div className="mt-14 grid grid-cols-1 gap-6 md:grid-cols-3">
         {pains.map((pain) => (
           <div key={pain.title} className="card-surface p-6">
             <h3 className="text-lg font-semibold text-navy">{pain.title}</h3>

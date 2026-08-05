@@ -23,7 +23,7 @@ export default function ProofSection() {
           </p>
         </div>
 
-        <div className="mx-auto mt-12 grid max-w-3xl gap-8 sm:grid-cols-3">
+        <div className="mx-auto mt-12 grid max-w-3xl grid-cols-1 gap-8 sm:grid-cols-3">
           {stats.map((stat) => (
             <div key={stat.label} className="text-center">
               <p className="text-gradient-brand text-3xl font-bold">{stat.value}</p>
