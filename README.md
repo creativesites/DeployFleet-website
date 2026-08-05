@@ -29,6 +29,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ```bash
 npm run build   # production build + type check
 npm run lint    # ESLint
+npm run test    # vitest — calculator engine unit tests
 ```
 
 ## Brand tokens
@@ -126,6 +127,53 @@ generation pattern already suggests is possible. Implementing this is a
 backend/CRM decision (where leads get stored, what "personalized instance"
 means operationally), not just a frontend change — flagged here so it
 isn't rediscovered from scratch later.
+
+## Intelligence Hub (`/intelligence-hub`)
+
+The free, no-sign-up calculator suite — full architecture and phasing in
+the [Intelligence Hub plan](https://claude.ai/code/artifact/f1e7dac5-66a5-4a1d-81bf-2a3ae9033e82).
+Governing rule: every calculator is a deterministic **Layer 1** engine
+(`src/lib/calculators/*.ts` — pure functions, no network calls, unit
+tested) with an **optional Layer 2** AI enhancement on top, never the
+reverse. Layer 2 (DeepSeek → Gemini provider router, explanations,
+recommendations) is Phase B — not built yet; Phase A is engine-only by
+design.
+
+**Locked decisions** (all six — calculator selection, $20/month AI spend
+ceiling, Firebase+Clerk as the Phase E/F accounts stack, the benchmark
+data workflow, Google Maps Distance API authorization for Phase B, and
+"Intelligence Hub" over "Calculators" as the nav name) are recorded in the
+plan doc §11, not just in chat history — check there before re-deciding
+anything already settled.
+
+**Shipped (Phase A, 1 of 3 calculators):**
+- **Cost Per Kilometre** (`/intelligence-hub/cost-per-km`) — fuel, fixed
+  costs, tyres/maintenance, driver wages, tolls, broken down per km with
+  an annual total. `src/lib/calculators/costPerKm.ts` +
+  `costPerKm.test.ts` (7 tests, `npm run test`).
+
+**Not yet built:** Trip Profitability and Fuel Efficiency (the other two
+Phase A calculators) — index page at `/intelligence-hub` already lists
+all ten with phase badges so the roadmap is visible before it's built.
+
+**Benchmark data** (`src/lib/benchmarks.ts`) — every value is sourced and
+dated, per the data-integrity rule in the plan §06:
+- Diesel price: K26.86/litre, ERB Zambia, 1 Aug 2026 — flagged in the UI
+  as volatile (moved >K4/litre month-to-month through 2026), not a stable
+  constant.
+- NAPSA: 5%+5% split, K37,236/month ceiling, capping the deduction at
+  K1,861.80 — effective 1 Jan 2026.
+- Heavy-vehicle tolls: K300/gate (4+ axle), K200/gate (2–4 axle
+  medium-heavy) — NRFA, effective 1 Jan 2026.
+
+Only the diesel price is pre-filled into the Cost Per Kilometre form — the
+other benchmarks appear as contextual help text (e.g. "5% of gross,
+capped at K1,861.80") rather than a numeric default, since prefilling
+NAPSA or tolls with a flat number would misrepresent figures that
+genuinely depend on the user's own salary/route. Fields with no sourced
+benchmark yet (fuel consumption, insurance, driver wages, tyres,
+maintenance) are left blank rather than seeded with an invented "typical"
+number.
 
 ## Messaging guardrails
 

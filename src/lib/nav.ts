@@ -35,9 +35,95 @@ export const productLinks: NavLink[] = [
 export const primaryNav: NavLink[] = [
   { label: "Product", href: "/product" },
   { label: "Solutions", href: "/solutions" },
+  { label: "Intelligence Hub", href: "/intelligence-hub" },
   { label: "Pricing", href: "/pricing" },
   { label: "About", href: "/about" },
   { label: "Resources", href: "/resources" },
+];
+
+export type CalculatorPhase = "A" | "B" | "C" | "D";
+
+export type CalculatorLink = NavLink & {
+  phase: CalculatorPhase;
+  live: boolean;
+};
+
+/**
+ * Full portfolio per the Intelligence Hub plan §05, phased A→D. `live`
+ * flips to true as each one ships — the index page and cross-links read
+ * from this single list so nothing has to be updated in two places.
+ */
+export const intelligenceHubCalculators: CalculatorLink[] = [
+  {
+    label: "Cost Per Kilometre",
+    href: "/intelligence-hub/cost-per-km",
+    description: "The flagship number: what it really costs you to run a truck, per kilometre.",
+    phase: "A",
+    live: true,
+  },
+  {
+    label: "Trip Profitability",
+    href: "/intelligence-hub/trip-profitability",
+    description: "Per-trip profit, margin, and the minimum rate that's worth accepting.",
+    phase: "A",
+    live: false,
+  },
+  {
+    label: "Fuel Cost & Efficiency",
+    href: "/intelligence-hub/fuel-efficiency",
+    description: "Expected vs. actual fuel consumption, and when the gap is worth investigating.",
+    phase: "A",
+    live: false,
+  },
+  {
+    label: "Driver Pay & Advance",
+    href: "/intelligence-hub/driver-pay",
+    description: "Net pay, advance balances, and statutory deductions, worked out correctly.",
+    phase: "B",
+    live: false,
+  },
+  {
+    label: "Fleet Total Cost of Ownership",
+    href: "/intelligence-hub/fleet-tco",
+    description: "Lifecycle cost per truck, and the year replacing it actually pays off.",
+    phase: "B",
+    live: false,
+  },
+  {
+    label: "Break-Even Utilisation",
+    href: "/intelligence-hub/break-even",
+    description: "How many trucks need to be moving, and how far, before you're profitable.",
+    phase: "B",
+    live: false,
+  },
+  {
+    label: "Compliance & Penalty Risk",
+    href: "/intelligence-hub/compliance-risk",
+    description: "What non-compliance is likely to cost, and what's due soon.",
+    phase: "C",
+    live: false,
+  },
+  {
+    label: "Tyre Cost Per Kilometre",
+    href: "/intelligence-hub/tyre-cost",
+    description: "Budget vs. premium tyres, compared on total cost, not sticker price.",
+    phase: "C",
+    live: false,
+  },
+  {
+    label: "Load Optimisation & Axle Weight",
+    href: "/intelligence-hub/load-optimisation",
+    description: "Weight distribution across multi-country axle regulations.",
+    phase: "D",
+    live: false,
+  },
+  {
+    label: "DeployFleet ROI & Payback",
+    href: "/intelligence-hub/roi-payback",
+    description: "Whether — and how fast — fleet software pays for itself for your fleet.",
+    phase: "D",
+    live: false,
+  },
 ];
 
 export const footerNav = {
