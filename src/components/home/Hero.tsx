@@ -1,5 +1,4 @@
 import Link from "next/link";
-import ScreenshotPlaceholder from "@/components/ScreenshotPlaceholder";
 import { whatsappHref } from "@/lib/nav";
 
 export default function Hero() {
@@ -38,12 +37,22 @@ export default function Hero() {
         </div>
 
         <div className="mx-auto mt-14 max-w-5xl">
-          <div className="card-surface p-2 sm:p-3">
-            <ScreenshotPlaceholder
-              label="Mission Control — home dashboard"
-              hint="Desktop screenshot, populated demo data (public/screenshots/mission-control.png)"
-              aspect="video"
-            />
+          <div
+            className="overflow-hidden rounded-df-xl shadow-2xl"
+            style={{ aspectRatio: "1376 / 768" }}
+          >
+            <video
+              className="h-full w-full object-cover"
+              src="/brand/hero-video.mp4"
+              poster="/brand/hero-promo.png"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+            >
+              <track kind="captions" />
+            </video>
           </div>
         </div>
       </div>

@@ -54,7 +54,7 @@ export const footerNav = {
   ] as NavLink[],
 };
 
-export const WHATSAPP_NUMBER = "260000000000";
+export const WHATSAPP_NUMBER = "260979046745";
 export const WHATSAPP_MESSAGE = "Hi DeployFleet, I'd like to know more about the platform.";
 export const whatsappHref = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
   WHATSAPP_MESSAGE

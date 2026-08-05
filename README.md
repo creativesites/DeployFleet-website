@@ -54,6 +54,14 @@ backgrounds, `logo-lockup-dark.jpg` for dark). Both are raster exports with
 a baked-in background — a transparent PNG/SVG export would clean up the
 navbar/footer rendering; not yet supplied.
 
+`public/brand/hero-video.mp4` (autoplay/muted/loop) and
+`public/brand/hero-promo.png` (its poster, and the site's Open Graph/Twitter
+share image) are the designed hero asset — not a real product screenshot,
+a composed promo graphic. Its baked-in copy says "Built for Zambian
+trucking," which is fine as supporting visual proof but is a country-first
+frame the on-page copy deliberately avoids (see Messaging guardrails) — if
+that's ever regenerated, keep the on-page/visual framing consistent.
+
 ## Content status
 
 The full site structure (nav, footer, homepage, and all `/product/*`,
@@ -61,14 +69,15 @@ The full site structure (nav, footer, homepage, and all `/product/*`,
 routes) is built and passes `next build`. What's still placeholder, by
 design, until real assets/decisions land:
 
-- **Screenshots** — every product screenshot is a labeled dashed-border
-  placeholder (`ScreenshotPlaceholder` component). The label text names the
-  exact screen expected (e.g. "Mission Control — home dashboard"). Drop the
-  real PNG into `public/screenshots/` and swap in an `<Image>` — the label
-  doubles as a shot list.
-- **WhatsApp number** — `WHATSAPP_NUMBER` in `src/lib/nav.ts` is a
-  placeholder (`260000000000`). Replace with the real number before launch;
-  every WhatsApp CTA and both lead forms depend on it.
+- **Screenshots** — every product screenshot other than the hero is a
+  labeled dashed-border placeholder (`ScreenshotPlaceholder` component).
+  The label text names the exact screen expected (e.g. "Mission Control —
+  home dashboard"). Drop the real PNG into `public/screenshots/` and swap
+  in an `<Image>` — the label doubles as a shot list.
+- **WhatsApp number** — `WHATSAPP_NUMBER` in `src/lib/nav.ts` is set to
+  `260979046745`, sourced from the number printed on the hero promo
+  graphic. Not independently verified — confirm it's the right, current
+  number before launch.
 - **Pricing** — no fixed numbers exist yet (open question in the product's
   own architecture docs). The pricing page intentionally shows tiers by
   what's included, not by price, funneling to a conversation instead.
