@@ -86,10 +86,16 @@ label text doubles as the shot needed):
 - Homepage AI Copilot section — needs a Copilot Rail chat screenshot.
 - `/product/ai-copilot` — needs a Copilot Console screenshot.
 
-A narrow/mobile-format Mission Control video was mentioned as coming (to be
-pushed directly to the repo) but hasn't landed as of this commit — no slot
-assigned yet; likely candidate is a mobile-specific hero treatment or a
-dedicated "works on your phone" section once it arrives.
+The Hero renders two different videos, not one scaled to fit: a landscape
+`hero-video.mp4` (1280×720) above the `sm` breakpoint, and a true portrait
+`hero-video-mobile.mp4` (720×1280) below it — swapped via Tailwind's
+`hidden`/`sm:hidden` rather than stretching one video to both shapes. Both
+are capped to loop at 8 seconds via a small `timeupdate` listener
+(`LOOP_SECONDS` in `Hero.tsx`) since the native `loop` attribute only
+replays a clip's full length. The mobile video has no poster frame yet
+(no still image extracted from it) — its container's background is set to
+`--df-hero-bg` so there's no flash of pure black before it loads; a real
+poster crop would be a nice follow-up.
 
 - **WhatsApp number** — `WHATSAPP_NUMBER` in `src/lib/nav.ts` is set to
   `260979046745`, sourced from the number printed on the hero promo

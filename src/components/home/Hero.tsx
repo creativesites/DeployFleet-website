@@ -1,16 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { whatsappHref } from "@/lib/nav";
 
 const LOOP_SECONDS = 8;
 
-export default function Hero() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-
+function useLoopCap(ref: RefObject<HTMLVideoElement | null>) {
   useEffect(() => {
-    const video = videoRef.current;
+    const video = ref.current;
     if (!video) return;
     const handleTimeUpdate = () => {
       if (video.currentTime >= LOOP_SECONDS) {
@@ -19,7 +17,14 @@ export default function Hero() {
     };
     video.addEventListener("timeupdate", handleTimeUpdate);
     return () => video.removeEventListener("timeupdate", handleTimeUpdate);
-  }, []);
+  }, [ref]);
+}
+
+export default function Hero() {
+  const desktopVideoRef = useRef<HTMLVideoElement>(null);
+  const mobileVideoRef = useRef<HTMLVideoElement>(null);
+  useLoopCap(desktopVideoRef);
+  useLoopCap(mobileVideoRef);
 
   return (
     <section
@@ -69,7 +74,38 @@ export default function Hero() {
           </div>
         </div>
 
-        <div className="relative mx-auto mt-16 max-w-6xl">
+        {/* Mobile: portrait hero video (below sm) */}
+        <div className="relative mx-auto mt-16 max-w-xs sm:hidden">
+          <div
+            className="pointer-events-none absolute -inset-4 rounded-df-xl opacity-40 blur-2xl"
+            style={{ background: "var(--df-gradient-brand)" }}
+            aria-hidden="true"
+          />
+          <div
+            className="relative overflow-hidden rounded-df-xl ring-1 ring-white/10"
+            style={{
+              aspectRatio: "720 / 1280",
+              boxShadow: "0 40px 100px -20px rgba(0,0,0,0.6)",
+              background: "var(--df-hero-bg)",
+            }}
+          >
+            <video
+              ref={mobileVideoRef}
+              className="h-full w-full object-cover"
+              src="/brand/hero-video-mobile.mp4"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+            >
+              <track kind="captions" />
+            </video>
+          </div>
+        </div>
+
+        {/* Tablet/desktop: landscape hero video (sm and up) */}
+        <div className="relative mx-auto mt-16 hidden max-w-6xl sm:block">
           <div
             className="pointer-events-none absolute -inset-6 rounded-df-xl opacity-40 blur-2xl"
             style={{ background: "var(--df-gradient-brand)" }}
@@ -77,10 +113,10 @@ export default function Hero() {
           />
           <div
             className="relative overflow-hidden rounded-df-xl ring-1 ring-white/10"
-            style={{ aspectRatio: "1376 / 768", boxShadow: "0 40px 100px -20px rgba(0,0,0,0.6)" }}
+            style={{ aspectRatio: "1280 / 720", boxShadow: "0 40px 100px -20px rgba(0,0,0,0.6)" }}
           >
             <video
-              ref={videoRef}
+              ref={desktopVideoRef}
               className="h-full w-full object-cover"
               src="/brand/hero-video.mp4"
               poster="/brand/hero-promo.png"
