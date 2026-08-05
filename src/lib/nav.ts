@@ -66,14 +66,14 @@ export const intelligenceHubCalculators: CalculatorLink[] = [
     href: "/intelligence-hub/trip-profitability",
     description: "Per-trip profit, margin, and the minimum rate that's worth accepting.",
     phase: "A",
-    live: false,
+    live: true,
   },
   {
     label: "Fuel Cost & Efficiency",
     href: "/intelligence-hub/fuel-efficiency",
     description: "Expected vs. actual fuel consumption, and when the gap is worth investigating.",
     phase: "A",
-    live: false,
+    live: true,
   },
   {
     label: "Driver Pay & Advance",

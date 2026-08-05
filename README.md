@@ -146,15 +146,34 @@ data workflow, Google Maps Distance API authorization for Phase B, and
 plan doc §11, not just in chat history — check there before re-deciding
 anything already settled.
 
-**Shipped (Phase A, 1 of 3 calculators):**
+**Phase A is complete — all 3 calculators shipped, engine-only, no AI:**
 - **Cost Per Kilometre** (`/intelligence-hub/cost-per-km`) — fuel, fixed
   costs, tyres/maintenance, driver wages, tolls, broken down per km with
-  an annual total. `src/lib/calculators/costPerKm.ts` +
-  `costPerKm.test.ts` (7 tests, `npm run test`).
+  an annual total. `costPerKm.ts` (7 tests).
+- **Trip Profitability** (`/intelligence-hub/trip-profitability`) —
+  revenue (per-km rate or lump sum) vs. every real trip cost, gross
+  profit, margin, and the break-even rate below which a load loses money.
+  `tripProfitability.ts` (10 tests). Route distance is a manual input —
+  Google Maps Distance API integration is authorized but deferred to
+  Phase B, per the locked decision.
+- **Fuel Cost & Efficiency** (`/intelligence-hub/fuel-efficiency`) —
+  actual vs. expected consumption for a trip, cost variance, and a
+  threshold-based anomaly flag (>10% over = worth a look, >20% = worth
+  investigating). `fuelEfficiency.ts` (8 tests).
 
-**Not yet built:** Trip Profitability and Fuel Efficiency (the other two
-Phase A calculators) — index page at `/intelligence-hub` already lists
-all ten with phase badges so the roadmap is visible before it's built.
+25 tests total across the three engines, `npm run test`. All three status
+flags (Trip Profitability's healthy/thin-margin/loss, Fuel Efficiency's
+below/normal/above/significantly-above) are fixed threshold rules, not AI
+judgement — real Layer 1 logic, same discipline as the raw numbers.
+
+`src/components/intelligence-hub/NumberField.tsx` holds the shared form
+input + `toNumber`/`formatZmw` helpers all three calculators use, factored
+out after Cost Per Kilometre to avoid three copies drifting apart.
+
+**Not yet built:** the other 7 calculators (Phase B onward — Driver Pay,
+Fleet TCO, Break-Even, Compliance Risk, Tyre CPK, Load Optimisation, ROI/
+Payback) and all of Layer 2 (the AI provider router, explanations,
+recommendations) — see the plan's roadmap §10 for the order.
 
 **Benchmark data** (`src/lib/benchmarks.ts`) — every value is sourced and
 dated, per the data-integrity rule in the plan §06:
