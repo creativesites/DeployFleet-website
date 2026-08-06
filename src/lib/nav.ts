@@ -101,28 +101,28 @@ export const intelligenceHubCalculators: CalculatorLink[] = [
     href: "/intelligence-hub/compliance-risk",
     description: "What non-compliance is likely to cost, and what's due soon.",
     phase: "C",
-    live: false,
+    live: true,
   },
   {
     label: "Tyre Cost Per Kilometre",
     href: "/intelligence-hub/tyre-cost",
     description: "Budget vs. premium tyres, compared on total cost, not sticker price.",
     phase: "C",
-    live: false,
+    live: true,
   },
   {
     label: "Load Optimisation & Axle Weight",
     href: "/intelligence-hub/load-optimisation",
     description: "Weight distribution across multi-country axle regulations.",
     phase: "D",
-    live: false,
+    live: true,
   },
   {
     label: "DeployFleet ROI & Payback",
     href: "/intelligence-hub/roi-payback",
     description: "Whether — and how fast — fleet software pays for itself for your fleet.",
     phase: "D",
-    live: false,
+    live: true,
   },
 ];
 

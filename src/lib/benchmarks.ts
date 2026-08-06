@@ -118,3 +118,30 @@ export const HEAVY_VEHICLE_TOLLS: SourcedValue<HeavyVehicleTolls> = {
   confidence: "high",
   note: "Per single toll-gate passage. A single trip often crosses multiple gates — multiply by the number of gates on the route, not by distance.",
 };
+
+export interface AxleLoadLimits {
+  steeringSingleKg: number;
+  driveSingleKg: number;
+  tandemKg: number;
+  tridemKg: number;
+  /** Fraction of the legal limit allowed before a group is flagged overloaded, e.g. 0.05 for 5%. */
+  toleranceFraction: number;
+  gvmAt6AxlesKg: number;
+  gvmAt7PlusAxlesKg: number;
+}
+
+export const AXLE_LOAD_LIMITS: SourcedValue<AxleLoadLimits> = {
+  value: {
+    steeringSingleKg: 8000,
+    driveSingleKg: 10000,
+    tandemKg: 18000,
+    tridemKg: 24000,
+    toleranceFraction: 0.05,
+    gvmAt6AxlesKg: 48000,
+    gvmAt7PlusAxlesKg: 56000,
+  },
+  source: "COMESA-EAC-SADC Tripartite harmonized axle load limits, cross-checked against Zambia-specific GVM figures",
+  asOf: "2026-08-06",
+  confidence: "medium",
+  note: "Zambia's RTSA does not publish a reachable online copy of its own axle-load schedule (its downloads page and related regional PDFs returned 403/503 while sourcing this). These per-axle-group limits come from the EAC Vehicle Load Control Act, the same harmonized Tripartite (COMESA-EAC-SADC) framework Zambia operates under as a member state — cross-checked against an independently sourced Zambia-specific figure (48-tonne GVM at 6 axles, 56-tonne GVM at 7+ axles) that matches the harmonized ceiling exactly. The 5% tolerance is the same allowance the source framework grants for in-transit cargo shift. Confirm against RTSA directly before relying on this for a real compliance decision — this is regulatory, safety-relevant data, treat it as a starting point, not a citation.",
+};

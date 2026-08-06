@@ -260,10 +260,61 @@ side.
 **63 tests total** (`npm run test`): 25 Phase A + 22 Phase B engines (8 +
 6 + 8) + 6 router + 5 rateLimit + 5 cache.
 
-**All 6 Phase A + B calculators are now live** in `intelligenceHubCalculators`
-(`src/lib/nav.ts`) and listed on the Hub index under "Available now" — only
-Phase C (Compliance & Penalty Risk, Tyre CPK) and Phase D (Load
-Optimisation, ROI/Payback) remain, per the plan's roadmap §10.
+**Phase C is also complete — the remaining 4 calculators, closing the
+full 10-calculator Intelligence Hub portfolio in one round.** The plan
+doc's own portfolio table (§05) tags Compliance & Penalty Risk / Tyre CPK
+as "Phase C" and Load Optimisation / ROI & Payback as "Phase D," but the
+separate roadmap section (§10 — the one the doc says actually governs
+build sequencing) describes engineering Phase C as all 4 remaining
+calculators reaching engine+Layer 2 parity together. That's a real
+inconsistency in the plan doc itself, not a misreading — flagged and
+resolved with the user (build all 4 now) rather than silently picking one
+reading.
+- **Compliance & Penalty Risk** (`/intelligence-hub/compliance-risk`) —
+  up to 4 user-named/user-dated compliance documents (rename any row —
+  no hardcoded regulatory jargon), expiry countdown, expired/expiring-
+  soon(30d, the same threshold DeployFleet's own compliance tracking
+  uses)/valid status, total renewal cost, and penalty exposure summed
+  only from currently-expired documents. The penalty figure is always the
+  user's own estimate — no published fine schedule is invented.
+  `complianceRisk.ts` (10 tests).
+- **Tyre Cost Per Kilometre** (`/intelligence-hub/tyre-cost`) — budget vs.
+  premium tyre options compared on lifecycle cost per km (purchase price
+  + retreads, each retread carrying its own cost and km life), plus
+  annual cost per vehicle scaled by tyre position count and distance.
+  `tyreCostPerKm.ts` (9 tests).
+- **Load Optimisation & Axle Weight** (`/intelligence-hub/load-optimisation`)
+  — up to 4 axle groups (steering-single/drive-single/tandem/tridem),
+  each checked against sourced harmonized axle load limits with the
+  source framework's own 5% tolerance, plus a gross-vehicle-mass check
+  against sourced 48-tonne(6-axle)/56-tonne(7+-axle) caps — explicitly
+  "not applicable" below 6 axles rather than guessing a number. A
+  real, demonstrated scenario in testing: every individual axle group can
+  be compliant while the total GVM is still overloaded — the calculator
+  catches this, not just per-axle limits. `loadOptimisation.ts` (8 tests).
+- **DeployFleet ROI & Payback** (`/intelligence-hub/roi-payback`) —
+  user-supplied monthly subscription cost and one-time setup cost against
+  user-estimated monthly savings across 5 categories, payback period,
+  and 3-year ROI. No DeployFleet price is hardcoded anywhere — pricing is
+  still an open question (see above), so this calculator never assumes
+  one for the user. `roiPayback.ts` (8 tests).
+
+All four reuse the same AI Insight panel pattern as every prior
+calculator. `NumberField.tsx` gained three siblings for this round —
+`TextField`, `DateField`, `SelectField` — the first calculators in the
+suite needing non-numeric input (a compliance document's name/date, an
+axle group's type).
+
+**35 tests total this round** (10 + 9 + 8 + 8). **98 tests total overall**
+(`npm run test`): 25 Phase A + 22 Phase B + 35 Phase C engines + 6 router
++ 5 rateLimit + 5 cache.
+
+**All 10 calculators are now live** in `intelligenceHubCalculators`
+(`src/lib/nav.ts`) and listed on the Hub index under "Available now" — the
+"Coming next" section is gone entirely. This closes the Intelligence Hub
+build per the plan's roadmap §10; nothing further is scoped there beyond
+Phase E (accounts, memory, monetisation), explicitly out of scope until
+the "no sign-up required" constraint itself is revisited.
 
 **Benchmark data** (`src/lib/benchmarks.ts`) — every value is sourced and
 dated, per the data-integrity rule in the plan §06:
@@ -282,6 +333,17 @@ dated, per the data-integrity rule in the plan §06:
   no cap), sourced the same way.
 - Heavy-vehicle tolls: K300/gate (4+ axle), K200/gate (2–4 axle
   medium-heavy) — NRFA, effective 1 Jan 2026.
+- Axle load limits: COMESA-EAC-SADC Tripartite harmonized limits
+  (steering-single 8,000kg, drive-single 10,000kg, tandem 18,000kg,
+  tridem 24,000kg, 5% in-transit tolerance) plus Zambia-specific GVM caps
+  (48 tonnes at 6 axles, 56 tonnes at 7+ axles) — confidence `medium`,
+  RTSA's own downloads page and related regional PDFs all returned
+  403/503 while sourcing this, so it's cross-checked between the EAC
+  Vehicle Load Control Act's published figures and an independently
+  sourced Zambia-specific GVM figure that matches the harmonized ceiling
+  exactly, not verified against RTSA directly. This is regulatory,
+  safety-relevant data — treat it as a starting point for a real
+  compliance decision, not a citation.
 
 Only the diesel price is pre-filled into the Cost Per Kilometre form — the
 other benchmarks appear as contextual help text (e.g. "5% of gross,
