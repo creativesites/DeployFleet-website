@@ -1,5 +1,5 @@
 import Link from "next/link";
-import ScreenshotPlaceholder from "@/components/ScreenshotPlaceholder";
+import Screenshot from "@/components/Screenshot";
 
 const agents = [
   "Dispatch",
@@ -15,11 +15,15 @@ export default function AiSection() {
     <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
       <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
         <div className="order-2 lg:order-1">
-          <div className="card-surface border-ai-violet/20 p-2 sm:p-3">
-            <ScreenshotPlaceholder
-              label="Copilot Rail — chat with a tool-lookup line"
-              hint="public/screenshots/copilot-rail-chat.png"
-              aspect="video"
+          <div
+            className="card-surface p-2 sm:p-3"
+            style={{ borderColor: "color-mix(in srgb, var(--df-ai-violet) 25%, var(--df-border))" }}
+          >
+            <Screenshot
+              src="/screenshots/copilot-console.jpg"
+              alt="DeployFleet Copilot Console — the six-agent catalog, each with a direct ask-a-question box"
+              width={1080}
+              height={1047}
             />
           </div>
         </div>

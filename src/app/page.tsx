@@ -5,6 +5,7 @@ import PillarsSection from "@/components/home/PillarsSection";
 import HowItWorks from "@/components/home/HowItWorks";
 import AiSection from "@/components/home/AiSection";
 import TrustSection from "@/components/home/TrustSection";
+import CalculatorsSection from "@/components/home/CalculatorsSection";
 import ProofSection from "@/components/home/ProofSection";
 import CtaSection from "@/components/home/CtaSection";
 
@@ -18,6 +19,7 @@ export default function Home() {
       <HowItWorks />
       <AiSection />
       <TrustSection />
+      <CalculatorsSection />
       <ProofSection />
       <CtaSection />
     </>
