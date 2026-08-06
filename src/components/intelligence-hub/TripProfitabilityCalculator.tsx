@@ -6,13 +6,18 @@ import {
   calculateTripProfitability,
   type RevenueMode,
   type TripProfitabilityInputs,
+  type TripProfitabilityResult,
 } from "@/lib/calculators/tripProfitability";
 import { formatMoney } from "@/lib/countries";
 import { whatsappHref } from "@/lib/nav";
-import { NumberField, toNumber } from "@/components/intelligence-hub/NumberField";
+import { toNumber } from "@/components/intelligence-hub/NumberField";
 import { AiInsightPanel } from "@/components/intelligence-hub/AiInsightPanel";
 import { CountrySelector } from "@/components/intelligence-hub/CountrySelector";
 import { useSelectedCountry } from "@/components/intelligence-hub/useSelectedCountry";
+import { SliderField } from "@/components/intelligence-hub/SliderField";
+import { HeroMetric } from "@/components/intelligence-hub/HeroMetric";
+import { MiniBarChart } from "@/components/intelligence-hub/MiniBarChart";
+import { ScenarioRow, type Scenario } from "@/components/intelligence-hub/ScenarioRow";
 
 type FormState = {
   distanceKm: string;
@@ -30,18 +35,18 @@ type FormState = {
 };
 
 const emptyState: FormState = {
-  distanceKm: "",
+  distanceKm: "450",
   revenueMode: "perKm",
-  ratePerKm: "",
-  lumpSum: "",
+  ratePerKm: "30",
+  lumpSum: "13500",
   fuelPricePerLitre: "",
-  fuelConsumptionLPer100Km: "",
-  driverAllowance: "",
-  tolls: "",
-  borderFees: "",
-  tyresPerKm: "",
-  maintenanceReservePerKm: "",
-  otherCosts: "",
+  fuelConsumptionLPer100Km: "38",
+  driverAllowance: "300",
+  tolls: "200",
+  borderFees: "0",
+  tyresPerKm: "0.9",
+  maintenanceReservePerKm: "0.6",
+  otherCosts: "0",
 };
 
 const statusCopy: Record<string, { label: string; className: string; description: string }> = {
@@ -62,18 +67,57 @@ const statusCopy: Record<string, { label: string; className: string; description
   },
 };
 
+/** Same cross-currency magnitude proxy as the flagship Cost Per Km calculator — see currencyScale() there for the full rationale. */
+function currencyScale(dieselPricePerLitre: number | undefined): number {
+  return dieselPricePerLitre && dieselPricePerLitre > 0 ? dieselPricePerLitre : 25;
+}
+
+function round2(n: number): string {
+  return (Math.round(n * 100) / 100).toString();
+}
+
 export default function TripProfitabilityCalculator() {
   const [form, setForm] = useState<FormState>(emptyState);
   const [touchedFuelPrice, setTouchedFuelPrice] = useState(false);
+  const [activeScenario, setActiveScenario] = useState<string | null>(null);
   const { country, countryCode, selectCountry } = useSelectedCountry();
   const money = (v: number) => formatMoney(v, country);
+  const scale = currencyScale(country.dieselPricePerLitre?.value);
+
+  // Same re-baseline-on-country-switch fix as Cost Per Km — see that
+  // component for the full rationale. Adjusted during render, not in a
+  // useEffect, per this project's set-state-in-effect lint rule.
+  const [prevCountryCode, setPrevCountryCode] = useState(countryCode);
+  if (countryCode !== prevCountryCode) {
+    setPrevCountryCode(countryCode);
+    setTouchedFuelPrice(false);
+    setActiveScenario(null);
+  }
 
   const fuelPriceValue =
     !touchedFuelPrice && country.dieselPricePerLitre ? country.dieselPricePerLitre.value.toString() : form.fuelPricePerLitre;
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     if (key === "fuelPricePerLitre") setTouchedFuelPrice(true);
+    setActiveScenario(null);
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  const scenarios: Scenario<FormState>[] = useMemo(
+    () => [
+      { label: "Fuel +10%", apply: (f) => ({ ...f, fuelPricePerLitre: round2(toNumber(fuelPriceValue) * 1.1) }) },
+      { label: "Fuel −10%", apply: (f) => ({ ...f, fuelPricePerLitre: round2(toNumber(fuelPriceValue) * 0.9) }) },
+      { label: "Distance +20%", apply: (f) => ({ ...f, distanceKm: Math.round(toNumber(f.distanceKm) * 1.2).toString() }) },
+      { label: "Driver allowance +10%", apply: (f) => ({ ...f, driverAllowance: round2(toNumber(f.driverAllowance) * 1.1) }) },
+      { label: "Tolls +20%", apply: (f) => ({ ...f, tolls: round2(toNumber(f.tolls) * 1.2) }) },
+    ],
+    [fuelPriceValue]
+  );
+
+  function applyScenario(scenario: Scenario<FormState>) {
+    setTouchedFuelPrice(true);
+    setForm((prev) => scenario.apply(prev));
+    setActiveScenario(scenario.label);
   }
 
   const inputs: TripProfitabilityInputs = useMemo(
@@ -101,15 +145,18 @@ export default function TripProfitabilityCalculator() {
     (inputs.revenueMode === "perKm" ? inputs.ratePerKm > 0 : inputs.lumpSum > 0);
   const status = statusCopy[result.status];
 
+  const chartData = result.breakdown.filter((item) => item.amount > 0).map((item) => ({ label: item.label, value: item.amount }));
+
   function buildAiPrompt(): string {
+    const r: TripProfitabilityResult = result;
     const revenueDescription =
       inputs.revenueMode === "perKm" ? `${money(inputs.ratePerKm)}/km rate` : `${money(inputs.lumpSum)} lump sum`;
     return `Trip profitability for a ${inputs.distanceKm} km trip offered at ${revenueDescription} (${country.name}, ${country.currencyCode}):
-- Revenue: ${money(result.totalRevenue)}
-- Total cost: ${money(result.totalCost)} (fuel ${money(result.fuelCost)}, tyres/maintenance ${money(result.distanceCost)}, driver allowance ${money(inputs.driverAllowance)}, tolls ${money(inputs.tolls)}, border fees ${money(inputs.borderFees)})
-- Gross profit: ${money(result.grossProfit)} (${result.profitMarginPercent.toFixed(1)}% margin)
-- Break-even rate: ${money(result.breakEvenRatePerKm)}/km
-- Status: ${result.status}`;
+- Revenue: ${money(r.totalRevenue)}
+- Total cost: ${money(r.totalCost)} (fuel ${money(r.fuelCost)}, tyres/maintenance ${money(r.distanceCost)}, driver allowance ${money(inputs.driverAllowance)}, tolls ${money(inputs.tolls)}, border fees ${money(inputs.borderFees)})
+- Gross profit: ${money(r.grossProfit)} (${r.profitMarginPercent.toFixed(1)}% margin)
+- Break-even rate: ${money(r.breakEvenRatePerKm)}/km
+- Status: ${r.status}`;
   }
 
   return (
@@ -120,10 +167,11 @@ export default function TripProfitabilityCalculator() {
           Should you take this load?
         </h1>
         <p className="mt-6 text-lg leading-relaxed text-body">
-          Enter the route and what you&apos;re actually being offered, and
-          see the real profit — plus the minimum rate that&apos;s still
-          worth accepting. Distance is a manual entry for now; route
-          auto-fill is coming.
+          Adjust the levers, watch the number respond. Distance and what
+          you&apos;re actually being offered, against every real cost — the
+          profit, the margin, and the minimum rate that&apos;s still worth
+          accepting. Distance is a manual entry for now; route auto-fill is
+          coming.
         </p>
       </div>
 
@@ -136,162 +184,200 @@ export default function TripProfitabilityCalculator() {
             </div>
           </fieldset>
 
-          <fieldset className="card-surface p-6">
+          <fieldset className="card-surface space-y-6 p-6">
             <legend className="px-1 text-sm font-semibold text-navy">Route &amp; revenue</legend>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <NumberField
-                id="distanceKm"
-                label="Trip distance (km)"
-                value={form.distanceKm}
-                onChange={(v) => set("distanceKm", v)}
-                placeholder="e.g. 400"
-                step="1"
-              />
-              <div>
-                <span className="text-sm font-medium text-navy">Revenue type</span>
-                <div className="mt-1.5 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => set("revenueMode", "perKm")}
-                    className={`flex-1 rounded-df-md border px-3 py-3 text-sm font-medium transition-colors ${
-                      form.revenueMode === "perKm"
-                        ? "border-teal bg-[color-mix(in_srgb,var(--df-teal)_10%,transparent)] text-navy"
-                        : "border-border bg-canvas text-muted"
-                    }`}
-                  >
-                    Rate per km
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => set("revenueMode", "lumpSum")}
-                    className={`flex-1 rounded-df-md border px-3 py-3 text-sm font-medium transition-colors ${
-                      form.revenueMode === "lumpSum"
-                        ? "border-teal bg-[color-mix(in_srgb,var(--df-teal)_10%,transparent)] text-navy"
-                        : "border-border bg-canvas text-muted"
-                    }`}
-                  >
-                    Lump sum
-                  </button>
-                </div>
+            <SliderField
+              id="distanceKm"
+              label="Trip distance"
+              value={toNumber(form.distanceKm)}
+              onChange={(v) => set("distanceKm", v.toString())}
+              min={0}
+              max={3000}
+              step={25}
+              unit="km"
+            />
+            <div>
+              <span className="text-sm font-medium text-navy">Revenue type</span>
+              <div className="mt-1.5 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => set("revenueMode", "perKm")}
+                  className={`flex-1 rounded-df-md border px-3 py-3 text-sm font-medium transition-colors ${
+                    form.revenueMode === "perKm"
+                      ? "border-teal bg-[color-mix(in_srgb,var(--df-teal)_10%,transparent)] text-navy"
+                      : "border-border bg-canvas text-muted"
+                  }`}
+                >
+                  Rate per km
+                </button>
+                <button
+                  type="button"
+                  onClick={() => set("revenueMode", "lumpSum")}
+                  className={`flex-1 rounded-df-md border px-3 py-3 text-sm font-medium transition-colors ${
+                    form.revenueMode === "lumpSum"
+                      ? "border-teal bg-[color-mix(in_srgb,var(--df-teal)_10%,transparent)] text-navy"
+                      : "border-border bg-canvas text-muted"
+                  }`}
+                >
+                  Lump sum
+                </button>
               </div>
-              {form.revenueMode === "perKm" ? (
-                <NumberField
-                  id="ratePerKm"
-                  label={`Offered rate (${country.currencyCode}/km)`}
-                  value={form.ratePerKm}
-                  onChange={(v) => set("ratePerKm", v)}
-                  placeholder="e.g. 30"
-                />
-              ) : (
-                <NumberField
-                  id="lumpSum"
-                  label={`Offered total (${country.currencyCode})`}
-                  value={form.lumpSum}
-                  onChange={(v) => set("lumpSum", v)}
-                  placeholder="e.g. 12000"
-                />
-              )}
             </div>
+            {form.revenueMode === "perKm" ? (
+              <SliderField
+                id="ratePerKm"
+                label="Offered rate"
+                value={toNumber(form.ratePerKm)}
+                onChange={(v) => set("ratePerKm", v.toString())}
+                max={Math.ceil(scale * 3)}
+                step={scale > 10 ? 0.5 : 0.05}
+                unit={`${country.currencyCode}/km`}
+              />
+            ) : (
+              <SliderField
+                id="lumpSum"
+                label="Offered total"
+                value={toNumber(form.lumpSum)}
+                onChange={(v) => set("lumpSum", v.toString())}
+                max={Math.ceil(scale * 800)}
+                step={Math.max(1, Math.round(scale * 4))}
+                unit={country.currencyCode}
+              />
+            )}
           </fieldset>
 
-          <fieldset className="card-surface p-6">
+          <fieldset className="card-surface space-y-6 p-6">
             <legend className="px-1 text-sm font-semibold text-navy">Fuel</legend>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <NumberField
-                id="fuelConsumptionLPer100Km"
-                label="Fuel consumption (L/100km)"
-                value={form.fuelConsumptionLPer100Km}
-                onChange={(v) => set("fuelConsumptionLPer100Km", v)}
-                placeholder="e.g. 38"
-                hint="From your own fuel logs for this vehicle and load."
-              />
-              <NumberField
-                id="fuelPricePerLitre"
-                label={`Diesel price (${country.currencyCode}/litre)`}
-                value={fuelPriceValue}
-                onChange={(v) => set("fuelPricePerLitre", v)}
-                hint={
-                  country.dieselPricePerLitre
-                    ? `Pre-filled from Source: ${country.dieselPricePerLitre.source}.`
-                    : `Not sourced yet for ${country.name} — enter your own.`
-                }
-              />
-            </div>
+            <SliderField
+              id="fuelConsumptionLPer100Km"
+              label="Fuel consumption"
+              value={toNumber(form.fuelConsumptionLPer100Km)}
+              onChange={(v) => set("fuelConsumptionLPer100Km", v.toString())}
+              min={10}
+              max={80}
+              step={0.5}
+              unit="L/100km"
+              hint="From your own fuel logs for this vehicle and load."
+            />
+            <SliderField
+              id="fuelPricePerLitre"
+              label="Diesel price"
+              value={toNumber(fuelPriceValue)}
+              onChange={(v) => set("fuelPricePerLitre", v.toString())}
+              max={Math.ceil(scale * 3)}
+              step={scale > 10 ? 0.1 : 0.01}
+              unit={`${country.currencyCode}/L`}
+              hint={
+                country.dieselPricePerLitre
+                  ? `Pre-filled from Source: ${country.dieselPricePerLitre.source}.`
+                  : `Not sourced yet for ${country.name} — enter your own.`
+              }
+            />
           </fieldset>
 
-          <fieldset className="card-surface p-6">
+          <fieldset className="card-surface space-y-6 p-6">
             <legend className="px-1 text-sm font-semibold text-navy">Trip-specific costs</legend>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <NumberField
-                id="driverAllowance"
-                label="Driver allowance / per diem"
-                value={form.driverAllowance}
-                onChange={(v) => set("driverAllowance", v)}
-                placeholder="0"
-              />
-              <NumberField
-                id="tolls"
-                label="Tolls (total for this trip)"
-                value={form.tolls}
-                onChange={(v) => set("tolls", v)}
-                placeholder="0"
-                hint={
-                  country.tolls
-                    ? `Heavy vehicles (4+ axles) pay ${money(country.tolls.value.fourPlusAxleHeavy)}/gate — multiply by gates on this route. Source: ${country.tolls.source}.`
-                    : `Toll data not sourced yet for ${country.name}.`
-                }
-              />
-              <NumberField
-                id="borderFees"
-                label="Border fees / documentation"
-                value={form.borderFees}
-                onChange={(v) => set("borderFees", v)}
-                placeholder="0"
-              />
-              <NumberField
-                id="otherCosts"
-                label="Other costs"
-                value={form.otherCosts}
-                onChange={(v) => set("otherCosts", v)}
-                placeholder="0"
-              />
-              <NumberField
-                id="tyresPerKm"
-                label={`Tyres (${country.currencyCode}/km)`}
-                value={form.tyresPerKm}
-                onChange={(v) => set("tyresPerKm", v)}
-                placeholder="0"
-              />
-              <NumberField
-                id="maintenanceReservePerKm"
-                label={`Maintenance reserve (${country.currencyCode}/km)`}
-                value={form.maintenanceReservePerKm}
-                onChange={(v) => set("maintenanceReservePerKm", v)}
-                placeholder="0"
-              />
-            </div>
+            <SliderField
+              id="driverAllowance"
+              label="Driver allowance / per diem"
+              value={toNumber(form.driverAllowance)}
+              onChange={(v) => set("driverAllowance", v.toString())}
+              max={Math.ceil(scale * 100)}
+              step={Math.max(1, Math.round(scale * 0.5))}
+              unit={country.currencyCode}
+            />
+            <SliderField
+              id="tolls"
+              label="Tolls (total for this trip)"
+              value={toNumber(form.tolls)}
+              onChange={(v) => set("tolls", v.toString())}
+              max={Math.ceil(scale * 200)}
+              step={Math.max(1, Math.round(scale))}
+              unit={country.currencyCode}
+              hint={
+                country.tolls
+                  ? `Heavy vehicles (4+ axles) pay ${money(country.tolls.value.fourPlusAxleHeavy)}/gate — multiply by gates on this route. Source: ${country.tolls.source}.`
+                  : `Toll data not sourced yet for ${country.name}.`
+              }
+            />
+            <SliderField
+              id="borderFees"
+              label="Border fees / documentation"
+              value={toNumber(form.borderFees)}
+              onChange={(v) => set("borderFees", v.toString())}
+              max={Math.ceil(scale * 200)}
+              step={Math.max(1, Math.round(scale))}
+              unit={country.currencyCode}
+            />
+            <SliderField
+              id="otherCosts"
+              label="Other costs"
+              value={toNumber(form.otherCosts)}
+              onChange={(v) => set("otherCosts", v.toString())}
+              max={Math.ceil(scale * 100)}
+              step={Math.max(1, Math.round(scale * 0.5))}
+              unit={country.currencyCode}
+            />
+            <SliderField
+              id="tyresPerKm"
+              label="Tyres"
+              value={toNumber(form.tyresPerKm)}
+              onChange={(v) => set("tyresPerKm", v.toString())}
+              max={Math.max(2, Math.ceil(scale / 4))}
+              step={scale > 10 ? 0.05 : 0.005}
+              unit={`${country.currencyCode}/km`}
+            />
+            <SliderField
+              id="maintenanceReservePerKm"
+              label="Maintenance reserve"
+              value={toNumber(form.maintenanceReservePerKm)}
+              onChange={(v) => set("maintenanceReservePerKm", v.toString())}
+              max={Math.max(2, Math.ceil(scale / 4))}
+              step={scale > 10 ? 0.05 : 0.005}
+              unit={`${country.currencyCode}/km`}
+            />
           </fieldset>
         </div>
 
         <div className="lg:sticky lg:top-24 lg:self-start">
-          <div className="card-surface p-6">
+          <div className="df-tilt-card card-surface p-6">
             {hasEnoughToShow ? (
               <>
                 <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${status.className}`}>
                   {status.label}
                 </span>
                 <p className="mt-4 text-sm font-medium text-muted">Gross profit</p>
-                <p className="mt-1 text-4xl font-bold text-navy">{money(result.grossProfit)}</p>
+                <p className="mt-1 text-4xl font-bold text-navy">
+                  <HeroMetric value={result.grossProfit} formatter={(v) => money(v)} />
+                </p>
                 <p className="mt-1 text-sm text-muted">{status.description}</p>
+
+                <div className="mt-6 border-t border-border pt-4">
+                  <MiniBarChart data={chartData} />
+                  <div className="mt-2 space-y-1.5">
+                    {result.breakdown
+                      .filter((item) => item.amount > 0)
+                      .map((item) => (
+                        <div key={item.label} className="flex items-center justify-between text-xs">
+                          <span className="text-muted">{item.label}</span>
+                          <span className="font-medium text-navy">{money(item.amount)}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
 
                 <dl className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Revenue</dt>
-                    <dd className="font-medium text-navy">{money(result.totalRevenue)}</dd>
+                    <dd className="font-medium text-navy">
+                      <HeroMetric value={result.totalRevenue} formatter={(v) => money(v)} />
+                    </dd>
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Total cost</dt>
-                    <dd className="font-medium text-navy">{money(result.totalCost)}</dd>
+                    <dd className="font-medium text-navy">
+                      <HeroMetric value={result.totalCost} formatter={(v) => money(v)} />
+                    </dd>
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Margin</dt>
@@ -299,13 +385,24 @@ export default function TripProfitabilityCalculator() {
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Profit per km</dt>
-                    <dd className="font-medium text-navy">{money(result.profitPerKm)}</dd>
+                    <dd className="font-medium text-navy">
+                      <HeroMetric value={result.profitPerKm} formatter={(v) => money(v)} />
+                    </dd>
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Minimum viable rate</dt>
-                    <dd className="font-medium text-navy">{money(result.breakEvenRatePerKm)}/km</dd>
+                    <dd className="font-medium text-navy">
+                      <HeroMetric value={result.breakEvenRatePerKm} formatter={(v) => money(v)} />/km
+                    </dd>
                   </div>
                 </dl>
+
+                <div className="mt-6 border-t border-border pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Try a scenario</p>
+                  <div className="mt-3">
+                    <ScenarioRow scenarios={scenarios} onApply={applyScenario} activeLabel={activeScenario} />
+                  </div>
+                </div>
 
                 <AiInsightPanel feature="trip-profitability" buildPrompt={buildAiPrompt} />
               </>

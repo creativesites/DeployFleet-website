@@ -2,13 +2,19 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { calculateDriverPay, type DriverPayInputs } from "@/lib/calculators/driverPay";
+import { calculateDriverPay, type DriverPayInputs, type DriverPayResult } from "@/lib/calculators/driverPay";
 import { formatMoney } from "@/lib/countries";
 import { whatsappHref } from "@/lib/nav";
-import { NumberField, toNumber } from "@/components/intelligence-hub/NumberField";
+import { toNumber } from "@/components/intelligence-hub/NumberField";
 import { AiInsightPanel } from "@/components/intelligence-hub/AiInsightPanel";
 import { CountrySelector } from "@/components/intelligence-hub/CountrySelector";
 import { useSelectedCountry } from "@/components/intelligence-hub/useSelectedCountry";
+import { SliderField } from "@/components/intelligence-hub/SliderField";
+import { StepperField } from "@/components/intelligence-hub/StepperField";
+import { HeroMetric } from "@/components/intelligence-hub/HeroMetric";
+import { MiniBarChart } from "@/components/intelligence-hub/MiniBarChart";
+import { HealthGauge, type GaugeStatus } from "@/components/intelligence-hub/HealthGauge";
+import { ScenarioRow, type Scenario } from "@/components/intelligence-hub/ScenarioRow";
 
 type FormState = {
   baseSalaryMonthly: string;
@@ -21,25 +27,72 @@ type FormState = {
 };
 
 const initialState: FormState = {
-  baseSalaryMonthly: "",
-  overtimeHours: "",
-  overtimeRatePerHour: "",
-  tripAllowancesMonthly: "",
-  otherDeductions: "",
-  outstandingAdvanceBalance: "",
-  advanceDeductionRequested: "",
+  baseSalaryMonthly: "8000",
+  overtimeHours: "0",
+  overtimeRatePerHour: "60",
+  tripAllowancesMonthly: "0",
+  otherDeductions: "0",
+  outstandingAdvanceBalance: "0",
+  advanceDeductionRequested: "0",
 };
+
+/** Same cross-currency magnitude proxy as the flagship Cost Per Km calculator — see currencyScale() there for the full rationale. */
+function currencyScale(dieselPricePerLitre: number | undefined): number {
+  return dieselPricePerLitre && dieselPricePerLitre > 0 ? dieselPricePerLitre : 25;
+}
+
+function round2(n: number): string {
+  return (Math.round(n * 100) / 100).toString();
+}
+
+function takeHomeStatus(percent: number): GaugeStatus {
+  if (percent >= 75) return "healthy";
+  if (percent >= 60) return "warning";
+  return "danger";
+}
 
 export default function DriverPayCalculator() {
   const [form, setForm] = useState<FormState>(initialState);
+  const [activeScenario, setActiveScenario] = useState<string | null>(null);
   const { country, countryCode, selectCountry } = useSelectedCountry();
 
+  // Same render-time reset pattern as the flagship Cost Per Km calculator
+  // — a scenario chip ("Clear advance this period") from the previous
+  // country shouldn't stay highlighted against a different country's
+  // freshly-reset numbers.
+  const [prevCountryCode, setPrevCountryCode] = useState(countryCode);
+  if (countryCode !== prevCountryCode) {
+    setPrevCountryCode(countryCode);
+    setActiveScenario(null);
+  }
+
   function set<K extends keyof FormState>(key: K, value: string) {
+    setActiveScenario(null);
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
   const money = (v: number) => formatMoney(v, country);
+  const scale = currencyScale(country.dieselPricePerLitre?.value);
   const available = country.coverage === "full" && country.incomeTax && country.socialSecurity;
+
+  const scenarios: Scenario<FormState>[] = useMemo(
+    () => [
+      { label: "Base salary +10%", apply: (f) => ({ ...f, baseSalaryMonthly: round2(toNumber(f.baseSalaryMonthly) * 1.1) }) },
+      { label: "Overtime +10 hours", apply: (f) => ({ ...f, overtimeHours: (toNumber(f.overtimeHours) + 10).toString() }) },
+      { label: "Trip allowances +10%", apply: (f) => ({ ...f, tripAllowancesMonthly: round2(toNumber(f.tripAllowancesMonthly) * 1.1) }) },
+      { label: "Advance recovery +50%", apply: (f) => ({ ...f, advanceDeductionRequested: round2(toNumber(f.advanceDeductionRequested) * 1.5) }) },
+      {
+        label: "Clear advance this period",
+        apply: (f) => ({ ...f, advanceDeductionRequested: f.outstandingAdvanceBalance }),
+      },
+    ],
+    []
+  );
+
+  function applyScenario(scenario: Scenario<FormState>) {
+    setForm((prev) => scenario.apply(prev));
+    setActiveScenario(scenario.label);
+  }
 
   const inputs: DriverPayInputs | null = useMemo(() => {
     if (!available || !country.incomeTax || !country.socialSecurity) return null;
@@ -59,16 +112,31 @@ export default function DriverPayCalculator() {
 
   const result = useMemo(() => (inputs ? calculateDriverPay(inputs) : null), [inputs]);
   const hasEnoughToShow = result !== null && (inputs?.baseSalaryMonthly ?? 0) > 0;
+  const takeHomePercent = result && result.grossPay > 0 ? (result.netPayable / result.grossPay) * 100 : 0;
+
+  const chartData = useMemo(() => {
+    if (!result) return [];
+    const items: { label: string; value: number }[] = [
+      { label: result.socialSecurityLabel, value: result.socialSecurityAmount },
+      { label: "Income tax", value: result.incomeTaxAmount },
+      { label: result.taxLevyLabel, value: result.taxLevyAmount },
+      { label: result.secondaryLevyLabel, value: result.secondaryLevyAmount },
+      { label: "Advance recovered", value: result.advanceDeductionApplied },
+      { label: "Other deductions", value: result.otherDeductionsApplied },
+    ];
+    return items.filter((item) => item.value > 0);
+  }, [result]);
 
   function buildAiPrompt(): string {
     if (!result) return "";
+    const r: DriverPayResult = result;
     return `Driver pay calculation for one month, ${country.name} (${country.currencyCode}):
-- Gross pay: ${money(result.grossPay)} (base + overtime + trip allowances)
-- ${result.socialSecurityLabel} (employee): ${money(result.socialSecurityAmount)}
-- Income tax: ${money(result.incomeTaxAmount)}${result.taxLevyAmount > 0 ? ` + ${result.taxLevyLabel} ${money(result.taxLevyAmount)}` : ""}
-${result.secondaryLevyAmount > 0 ? `- ${result.secondaryLevyLabel}: ${money(result.secondaryLevyAmount)}\n` : ""}- Advance deducted this period: ${money(result.advanceDeductionApplied)} (${money(result.remainingAdvanceBalance)} still outstanding)
-- Other deductions: ${money(result.otherDeductionsApplied)}
-- Net payable: ${money(result.netPayable)}`;
+- Gross pay: ${money(r.grossPay)} (base + overtime + trip allowances)
+- ${r.socialSecurityLabel} (employee): ${money(r.socialSecurityAmount)}
+- Income tax: ${money(r.incomeTaxAmount)}${r.taxLevyAmount > 0 ? ` + ${r.taxLevyLabel} ${money(r.taxLevyAmount)}` : ""}
+${r.secondaryLevyAmount > 0 ? `- ${r.secondaryLevyLabel}: ${money(r.secondaryLevyAmount)}\n` : ""}- Advance deducted this period: ${money(r.advanceDeductionApplied)} (${money(r.remainingAdvanceBalance)} still outstanding)
+- Other deductions: ${money(r.otherDeductionsApplied)}
+- Net payable: ${money(r.netPayable)}`;
   }
 
   return (
@@ -79,10 +147,10 @@ ${result.secondaryLevyAmount > 0 ? `- ${result.secondaryLevyLabel}: ${money(resu
           What does a driver actually take home this month?
         </h1>
         <p className="mt-6 text-lg leading-relaxed text-body">
-          Base pay, overtime, and trip allowances in — statutory
-          deductions and any advance recovery worked out correctly, net
-          pay out. Pick your country below; the deduction rules and
-          currency switch to match.
+          Adjust the levers, watch the number respond. Base pay, overtime,
+          and trip allowances in — statutory deductions and any advance
+          recovery worked out correctly, net pay out. Pick your country
+          below; the deduction rules and currency switch to match.
         </p>
       </div>
 
@@ -95,69 +163,78 @@ ${result.secondaryLevyAmount > 0 ? `- ${result.secondaryLevyLabel}: ${money(resu
             </div>
           </fieldset>
 
-          <fieldset className="card-surface p-6">
+          <fieldset className="card-surface space-y-6 p-6">
             <legend className="px-1 text-sm font-semibold text-navy">Pay this month</legend>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <NumberField
-                id="baseSalaryMonthly"
-                label="Base salary (monthly)"
-                value={form.baseSalaryMonthly}
-                onChange={(v) => set("baseSalaryMonthly", v)}
-                placeholder="e.g. 8000"
-              />
-              <NumberField
-                id="tripAllowancesMonthly"
-                label="Trip allowances (monthly)"
-                value={form.tripAllowancesMonthly}
-                onChange={(v) => set("tripAllowancesMonthly", v)}
-                placeholder="0"
-              />
-              <NumberField
-                id="overtimeHours"
-                label="Overtime hours"
-                value={form.overtimeHours}
-                onChange={(v) => set("overtimeHours", v)}
-                placeholder="0"
-                step="1"
-              />
-              <NumberField
-                id="overtimeRatePerHour"
-                label={`Overtime rate (${country.currencyCode}/hour)`}
-                value={form.overtimeRatePerHour}
-                onChange={(v) => set("overtimeRatePerHour", v)}
-                placeholder="0"
-              />
-            </div>
+            <SliderField
+              id="baseSalaryMonthly"
+              label="Base salary"
+              value={toNumber(form.baseSalaryMonthly)}
+              onChange={(v) => set("baseSalaryMonthly", v.toString())}
+              max={Math.ceil(scale * 800)}
+              step={Math.max(1, Math.round(scale * 4))}
+              unit={country.currencyCode}
+            />
+            <SliderField
+              id="tripAllowancesMonthly"
+              label="Trip allowances"
+              value={toNumber(form.tripAllowancesMonthly)}
+              onChange={(v) => set("tripAllowancesMonthly", v.toString())}
+              max={Math.ceil(scale * 200)}
+              step={Math.max(1, Math.round(scale))}
+              unit={country.currencyCode}
+            />
+            <StepperField
+              id="overtimeHours"
+              label="Overtime hours"
+              value={toNumber(form.overtimeHours)}
+              onChange={(v) => set("overtimeHours", v.toString())}
+              min={0}
+              max={120}
+              step={1}
+            />
+            <SliderField
+              id="overtimeRatePerHour"
+              label="Overtime rate"
+              value={toNumber(form.overtimeRatePerHour)}
+              onChange={(v) => set("overtimeRatePerHour", v.toString())}
+              max={Math.ceil(scale * 10)}
+              step={scale > 10 ? 0.5 : 0.05}
+              unit={`${country.currencyCode}/hour`}
+            />
           </fieldset>
 
-          <fieldset className="card-surface p-6">
+          <fieldset className="card-surface space-y-6 p-6">
             <legend className="px-1 text-sm font-semibold text-navy">Advance &amp; other deductions</legend>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <NumberField
-                id="outstandingAdvanceBalance"
-                label="Outstanding advance balance"
-                value={form.outstandingAdvanceBalance}
-                onChange={(v) => set("outstandingAdvanceBalance", v)}
-                placeholder="0"
-                hint="What the driver still owes on a prior advance, before this pay period."
-              />
-              <NumberField
-                id="advanceDeductionRequested"
-                label="Advance to recover this period"
-                value={form.advanceDeductionRequested}
-                onChange={(v) => set("advanceDeductionRequested", v)}
-                placeholder="0"
-                hint="Capped automatically at the outstanding balance and at what's left after statutory deductions."
-              />
-              <NumberField
-                id="otherDeductions"
-                label="Other deductions"
-                value={form.otherDeductions}
-                onChange={(v) => set("otherDeductions", v)}
-                placeholder="0"
-                hint="Union dues, uniform, etc."
-              />
-            </div>
+            <SliderField
+              id="outstandingAdvanceBalance"
+              label="Outstanding advance balance"
+              value={toNumber(form.outstandingAdvanceBalance)}
+              onChange={(v) => set("outstandingAdvanceBalance", v.toString())}
+              max={Math.ceil(scale * 1000)}
+              step={Math.max(1, Math.round(scale * 5))}
+              unit={country.currencyCode}
+              hint="What the driver still owes on a prior advance, before this pay period."
+            />
+            <SliderField
+              id="advanceDeductionRequested"
+              label="Advance to recover this period"
+              value={toNumber(form.advanceDeductionRequested)}
+              onChange={(v) => set("advanceDeductionRequested", v.toString())}
+              max={Math.ceil(scale * 1000)}
+              step={Math.max(1, Math.round(scale * 5))}
+              unit={country.currencyCode}
+              hint="Capped automatically at the outstanding balance and at what's left after statutory deductions."
+            />
+            <SliderField
+              id="otherDeductions"
+              label="Other deductions"
+              value={toNumber(form.otherDeductions)}
+              onChange={(v) => set("otherDeductions", v.toString())}
+              max={Math.ceil(scale * 100)}
+              step={Math.max(1, Math.round(scale * 0.5))}
+              unit={country.currencyCode}
+              hint="Union dues, uniform, etc."
+            />
           </fieldset>
 
           {available && country.incomeTax && country.socialSecurity && (
@@ -189,7 +266,7 @@ ${result.secondaryLevyAmount > 0 ? `- ${result.secondaryLevyLabel}: ${money(resu
         </div>
 
         <div className="lg:sticky lg:top-24 lg:self-start">
-          <div className="card-surface p-6">
+          <div className="df-tilt-card card-surface p-6">
             {!available ? (
               <div className="py-6 text-center">
                 <p className="text-sm text-muted">
@@ -200,8 +277,31 @@ ${result.secondaryLevyAmount > 0 ? `- ${result.secondaryLevyLabel}: ${money(resu
             ) : hasEnoughToShow && result ? (
               <>
                 <p className="text-sm font-medium text-muted">Net payable</p>
-                <p className="mt-1 text-4xl font-bold text-navy">{money(result.netPayable)}</p>
-                <p className="mt-1 text-sm text-muted">from {money(result.grossPay)} gross</p>
+                <p className="mt-1 text-4xl font-bold text-navy">
+                  <HeroMetric value={result.netPayable} formatter={(v) => money(v)} />
+                </p>
+                <p className="mt-1 text-sm text-muted">
+                  from <HeroMetric value={result.grossPay} formatter={(v) => money(v)} /> gross
+                </p>
+
+                <div className="mt-4">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-muted">Take-home share</span>
+                    <span className="font-semibold text-navy">{takeHomePercent.toFixed(0)}%</span>
+                  </div>
+                  <div className="mt-1.5">
+                    <HealthGauge percent={takeHomePercent} status={takeHomeStatus(takeHomePercent)} />
+                  </div>
+                </div>
+
+                {chartData.length > 0 && (
+                  <div className="mt-6 border-t border-border pt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Deductions</p>
+                    <div className="mt-2">
+                      <MiniBarChart data={chartData} />
+                    </div>
+                  </div>
+                )}
 
                 <dl className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
                   <div className="flex items-center justify-between">
@@ -251,6 +351,13 @@ ${result.secondaryLevyAmount > 0 ? `- ${result.secondaryLevyLabel}: ${money(resu
                     </div>
                   )}
                 </dl>
+
+                <div className="mt-6 border-t border-border pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Try a scenario</p>
+                  <div className="mt-3">
+                    <ScenarioRow scenarios={scenarios} onApply={applyScenario} activeLabel={activeScenario} />
+                  </div>
+                </div>
 
                 <AiInsightPanel feature="driver-pay" buildPrompt={buildAiPrompt} />
               </>

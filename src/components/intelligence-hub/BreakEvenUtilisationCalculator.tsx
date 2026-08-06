@@ -7,9 +7,17 @@ import {
   type BreakEvenUtilisationInputs,
 } from "@/lib/calculators/breakEvenUtilisation";
 import { whatsappHref } from "@/lib/nav";
-import { NumberField, toNumber, formatZmw } from "@/components/intelligence-hub/NumberField";
+import { toNumber, formatZmw } from "@/components/intelligence-hub/NumberField";
 import { AiInsightPanel } from "@/components/intelligence-hub/AiInsightPanel";
+import { SliderField } from "@/components/intelligence-hub/SliderField";
+import { StepperField } from "@/components/intelligence-hub/StepperField";
+import { HeroMetric } from "@/components/intelligence-hub/HeroMetric";
+import { MiniBarChart } from "@/components/intelligence-hub/MiniBarChart";
+import { HealthGauge, type GaugeStatus } from "@/components/intelligence-hub/HealthGauge";
+import { ScenarioRow, type Scenario } from "@/components/intelligence-hub/ScenarioRow";
 
+// Zambia/ZMW-only, same as before — not one of the 3 calculators in scope
+// for the multi-country field-renaming pass (see README.md).
 type FormState = {
   numberOfTrucks: string;
   fixedCostsMonthlyZmwPerTruck: string;
@@ -23,11 +31,11 @@ type FormState = {
 
 const initialState: FormState = {
   numberOfTrucks: "1",
-  fixedCostsMonthlyZmwPerTruck: "",
-  variableCostPerKmZmw: "",
-  revenuePerKmZmw: "",
+  fixedCostsMonthlyZmwPerTruck: "15000",
+  variableCostPerKmZmw: "6",
+  revenuePerKmZmw: "10",
   maxKmPerTruckPerMonth: "10000",
-  actualKmPerTruckPerMonth: "",
+  actualKmPerTruckPerMonth: "7000",
   rampUpMonths: "0",
   projectionMonths: "12",
 };
@@ -50,11 +58,39 @@ const statusCopy: Record<string, { label: string; className: string; description
   },
 };
 
+const GAUGE_STATUS: Record<string, GaugeStatus> = {
+  "below-break-even": "danger",
+  "at-break-even": "warning",
+  "above-break-even": "healthy",
+};
+
+function round2(n: number): string {
+  return (Math.round(n * 100) / 100).toString();
+}
+
 export default function BreakEvenUtilisationCalculator() {
   const [form, setForm] = useState<FormState>(initialState);
+  const [activeScenario, setActiveScenario] = useState<string | null>(null);
 
   function set<K extends keyof FormState>(key: K, value: string) {
+    setActiveScenario(null);
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  const scenarios: Scenario<FormState>[] = useMemo(
+    () => [
+      { label: "Revenue +10%", apply: (f) => ({ ...f, revenuePerKmZmw: round2(toNumber(f.revenuePerKmZmw) * 1.1) }) },
+      { label: "Variable cost −10%", apply: (f) => ({ ...f, variableCostPerKmZmw: round2(toNumber(f.variableCostPerKmZmw) * 0.9) }) },
+      { label: "Fixed costs −10%", apply: (f) => ({ ...f, fixedCostsMonthlyZmwPerTruck: round2(toNumber(f.fixedCostsMonthlyZmwPerTruck) * 0.9) }) },
+      { label: "Utilisation +20%", apply: (f) => ({ ...f, actualKmPerTruckPerMonth: Math.round(toNumber(f.actualKmPerTruckPerMonth) * 1.2).toString() }) },
+      { label: "Add a truck", apply: (f) => ({ ...f, numberOfTrucks: (toNumber(f.numberOfTrucks) + 1).toString() }) },
+    ],
+    []
+  );
+
+  function applyScenario(scenario: Scenario<FormState>) {
+    setForm((prev) => scenario.apply(prev));
+    setActiveScenario(scenario.label);
   }
 
   const inputs: BreakEvenUtilisationInputs = useMemo(
@@ -77,6 +113,15 @@ export default function BreakEvenUtilisationCalculator() {
   const status = statusCopy[result.status];
   const isAchievable = Number.isFinite(result.breakEvenKmPerTruckPerMonth);
 
+  const chartData = useMemo(
+    () => [
+      { label: "Current", value: inputs.actualKmPerTruckPerMonth },
+      { label: "Break-even", value: isAchievable ? result.breakEvenKmPerTruckPerMonth : 0 },
+      { label: "Max", value: inputs.maxKmPerTruckPerMonth },
+    ],
+    [inputs.actualKmPerTruckPerMonth, inputs.maxKmPerTruckPerMonth, isAchievable, result.breakEvenKmPerTruckPerMonth]
+  );
+
   function buildAiPrompt(): string {
     return `Break-even utilisation for a fleet of ${inputs.numberOfTrucks} truck(s):
 - Break-even: ${isAchievable ? `${result.breakEvenKmPerTruckPerMonth.toFixed(0)} km/truck/month (${result.breakEvenUtilisationPercent.toFixed(1)}% utilisation)` : "not achievable at this rate — revenue per km doesn't cover variable cost per km"}
@@ -93,95 +138,105 @@ export default function BreakEvenUtilisationCalculator() {
           How much do your trucks need to move before you&apos;re profitable?
         </h1>
         <p className="mt-6 text-lg leading-relaxed text-body">
-          Fixed costs, variable cost per km, and your rate per km — turned
-          into the break-even kilometres a truck needs each month, how
-          today&apos;s utilisation compares, and a monthly cash flow
-          projection.
+          Adjust the levers, watch the number respond. Fixed costs,
+          variable cost per km, and your rate per km — turned into the
+          break-even kilometres a truck needs each month, how today&apos;s
+          utilisation compares, and a monthly cash flow projection.
         </p>
       </div>
 
       <div className="mt-12 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_420px]">
         <div className="space-y-8">
-          <fieldset className="card-surface p-6">
+          <fieldset className="card-surface space-y-6 p-6">
             <legend className="px-1 text-sm font-semibold text-navy">Fleet &amp; rates</legend>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <NumberField
-                id="numberOfTrucks"
-                label="Number of trucks"
-                value={form.numberOfTrucks}
-                onChange={(v) => set("numberOfTrucks", v)}
-                step="1"
-              />
-              <NumberField
-                id="fixedCostsMonthlyZmwPerTruck"
-                label="Fixed costs per truck (monthly)"
-                value={form.fixedCostsMonthlyZmwPerTruck}
-                onChange={(v) => set("fixedCostsMonthlyZmwPerTruck", v)}
-                placeholder="e.g. 15000"
-                hint="Insurance, NAPSA, licensing, financing, yard rent — everything that doesn't change with distance driven."
-              />
-              <NumberField
-                id="variableCostPerKmZmw"
-                label="Variable cost (ZMW/km)"
-                value={form.variableCostPerKmZmw}
-                onChange={(v) => set("variableCostPerKmZmw", v)}
-                placeholder="e.g. 6"
-                hint="Fuel, tyres, maintenance reserve — from your Cost Per Kilometre result if you've already run it."
-              />
-              <NumberField
-                id="revenuePerKmZmw"
-                label="Revenue (ZMW/km)"
-                value={form.revenuePerKmZmw}
-                onChange={(v) => set("revenuePerKmZmw", v)}
-                placeholder="e.g. 10"
-              />
-            </div>
+            <StepperField
+              id="numberOfTrucks"
+              label="Number of trucks"
+              value={toNumber(form.numberOfTrucks)}
+              onChange={(v) => set("numberOfTrucks", v.toString())}
+              min={1}
+              max={100}
+              step={1}
+            />
+            <SliderField
+              id="fixedCostsMonthlyZmwPerTruck"
+              label="Fixed costs per truck"
+              value={toNumber(form.fixedCostsMonthlyZmwPerTruck)}
+              onChange={(v) => set("fixedCostsMonthlyZmwPerTruck", v.toString())}
+              max={100000}
+              step={500}
+              unit="ZMW/month"
+              hint="Insurance, NAPSA, licensing, financing, yard rent — everything that doesn't change with distance driven."
+            />
+            <SliderField
+              id="variableCostPerKmZmw"
+              label="Variable cost"
+              value={toNumber(form.variableCostPerKmZmw)}
+              onChange={(v) => set("variableCostPerKmZmw", v.toString())}
+              max={20}
+              step={0.1}
+              unit="ZMW/km"
+              hint="Fuel, tyres, maintenance reserve — from your Cost Per Kilometre result if you've already run it."
+            />
+            <SliderField
+              id="revenuePerKmZmw"
+              label="Revenue"
+              value={toNumber(form.revenuePerKmZmw)}
+              onChange={(v) => set("revenuePerKmZmw", v.toString())}
+              max={30}
+              step={0.1}
+              unit="ZMW/km"
+            />
           </fieldset>
 
-          <fieldset className="card-surface p-6">
+          <fieldset className="card-surface space-y-6 p-6">
             <legend className="px-1 text-sm font-semibold text-navy">Utilisation</legend>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <NumberField
-                id="maxKmPerTruckPerMonth"
-                label="Max achievable km/truck/month"
-                value={form.maxKmPerTruckPerMonth}
-                onChange={(v) => set("maxKmPerTruckPerMonth", v)}
-                step="500"
-              />
-              <NumberField
-                id="actualKmPerTruckPerMonth"
-                label="Actual km/truck/month today"
-                value={form.actualKmPerTruckPerMonth}
-                onChange={(v) => set("actualKmPerTruckPerMonth", v)}
-                step="500"
-              />
-            </div>
+            <SliderField
+              id="maxKmPerTruckPerMonth"
+              label="Max achievable"
+              value={toNumber(form.maxKmPerTruckPerMonth)}
+              onChange={(v) => set("maxKmPerTruckPerMonth", v.toString())}
+              max={30000}
+              step={500}
+              unit="km/truck/month"
+            />
+            <SliderField
+              id="actualKmPerTruckPerMonth"
+              label="Actual, today"
+              value={toNumber(form.actualKmPerTruckPerMonth)}
+              onChange={(v) => set("actualKmPerTruckPerMonth", v.toString())}
+              max={30000}
+              step={500}
+              unit="km/truck/month"
+            />
           </fieldset>
 
-          <fieldset className="card-surface p-6">
+          <fieldset className="card-surface space-y-6 p-6">
             <legend className="px-1 text-sm font-semibold text-navy">Cash flow projection</legend>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <NumberField
-                id="rampUpMonths"
-                label="Ramp-up months"
-                value={form.rampUpMonths}
-                onChange={(v) => set("rampUpMonths", v)}
-                step="1"
-                hint="0 if you're already at your actual utilisation. Otherwise, months to reach it from a standing start (a new truck or route)."
-              />
-              <NumberField
-                id="projectionMonths"
-                label="Months to project (max 36)"
-                value={form.projectionMonths}
-                onChange={(v) => set("projectionMonths", v)}
-                step="1"
-              />
-            </div>
+            <StepperField
+              id="rampUpMonths"
+              label="Ramp-up months"
+              value={toNumber(form.rampUpMonths)}
+              onChange={(v) => set("rampUpMonths", v.toString())}
+              min={0}
+              max={24}
+              step={1}
+              hint="0 if you're already at your actual utilisation. Otherwise, months to reach it from a standing start (a new truck or route)."
+            />
+            <StepperField
+              id="projectionMonths"
+              label="Months to project"
+              value={toNumber(form.projectionMonths)}
+              onChange={(v) => set("projectionMonths", v.toString())}
+              min={1}
+              max={36}
+              step={1}
+            />
           </fieldset>
         </div>
 
         <div className="lg:sticky lg:top-24 lg:self-start">
-          <div className="card-surface p-6">
+          <div className="df-tilt-card card-surface p-6">
             {hasEnoughToShow ? (
               <>
                 <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${status.className}`}>
@@ -191,7 +246,7 @@ export default function BreakEvenUtilisationCalculator() {
                 {isAchievable ? (
                   <>
                     <p className="mt-1 text-4xl font-bold text-navy">
-                      {Math.round(result.breakEvenKmPerTruckPerMonth).toLocaleString()}
+                      <HeroMetric value={result.breakEvenKmPerTruckPerMonth} formatter={(v) => Math.round(v).toLocaleString()} />
                       <span className="text-lg font-medium text-muted"> km/month</span>
                     </p>
                     <p className="mt-1 text-sm text-muted">
@@ -206,6 +261,23 @@ export default function BreakEvenUtilisationCalculator() {
                 )}
                 <p className="mt-1 text-sm text-muted">{status.description}</p>
 
+                <div className="mt-4">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-muted">Utilisation vs. max</span>
+                    <span className="font-semibold text-navy">{result.currentUtilisationPercent.toFixed(0)}%</span>
+                  </div>
+                  <div className="mt-1.5">
+                    <HealthGauge percent={result.currentUtilisationPercent} status={GAUGE_STATUS[result.status]} />
+                  </div>
+                </div>
+
+                <div className="mt-6 border-t border-border pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Current vs. break-even vs. max</p>
+                  <div className="mt-2">
+                    <MiniBarChart data={chartData} />
+                  </div>
+                </div>
+
                 <dl className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Contribution margin</dt>
@@ -213,7 +285,9 @@ export default function BreakEvenUtilisationCalculator() {
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Fleet profit/month, today</dt>
-                    <dd className="font-medium text-navy">{formatZmw(result.monthlyFleetProfitAtCurrentUtilisationZmw)}</dd>
+                    <dd className="font-medium text-navy">
+                      <HeroMetric value={result.monthlyFleetProfitAtCurrentUtilisationZmw} formatter={(v) => formatZmw(v)} />
+                    </dd>
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Cumulative cash flow break-even</dt>
@@ -243,6 +317,13 @@ export default function BreakEvenUtilisationCalculator() {
                     ))}
                   </div>
                 )}
+
+                <div className="mt-6 border-t border-border pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Try a scenario</p>
+                  <div className="mt-3">
+                    <ScenarioRow scenarios={scenarios} onApply={applyScenario} activeLabel={activeScenario} />
+                  </div>
+                </div>
 
                 <AiInsightPanel feature="break-even-utilisation" buildPrompt={buildAiPrompt} />
               </>
