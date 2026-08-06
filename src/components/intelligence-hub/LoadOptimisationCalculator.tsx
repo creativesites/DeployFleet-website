@@ -5,8 +5,13 @@ import Link from "next/link";
 import { calculateLoadOptimisation, type AxleGroupType } from "@/lib/calculators/loadOptimisation";
 import { AXLE_LOAD_LIMITS, formatSourceLabel } from "@/lib/benchmarks";
 import { whatsappHref } from "@/lib/nav";
-import { NumberField, SelectField, toNumber } from "@/components/intelligence-hub/NumberField";
+import { SelectField, toNumber } from "@/components/intelligence-hub/NumberField";
 import { AiInsightPanel } from "@/components/intelligence-hub/AiInsightPanel";
+import { SliderField } from "@/components/intelligence-hub/SliderField";
+import { HeroMetric } from "@/components/intelligence-hub/HeroMetric";
+import { MiniBarChart } from "@/components/intelligence-hub/MiniBarChart";
+import { HealthGauge, type GaugeStatus } from "@/components/intelligence-hub/HealthGauge";
+import { ScenarioRow, type Scenario } from "@/components/intelligence-hub/ScenarioRow";
 
 type GroupFormState = {
   label: string;
@@ -22,18 +27,40 @@ const groupTypeOptions: { value: AxleGroupType; label: string }[] = [
 ];
 
 const initialGroups: GroupFormState[] = [
-  { label: "Steering axle", groupType: "steering-single", actualLoadKg: "" },
-  { label: "Drive axle", groupType: "drive-single", actualLoadKg: "" },
-  { label: "Trailer group 1", groupType: "tandem", actualLoadKg: "" },
-  { label: "Trailer group 2", groupType: "tandem", actualLoadKg: "" },
+  { label: "Steering axle", groupType: "steering-single", actualLoadKg: "6500" },
+  { label: "Drive axle", groupType: "drive-single", actualLoadKg: "9000" },
+  { label: "Trailer group 1", groupType: "tandem", actualLoadKg: "16000" },
+  { label: "Trailer group 2", groupType: "tandem", actualLoadKg: "16000" },
 ];
+
+function round0(n: number): string {
+  return Math.round(n).toString();
+}
 
 export default function LoadOptimisationCalculator() {
   const [groups, setGroups] = useState<GroupFormState[]>(initialGroups);
+  const [activeScenario, setActiveScenario] = useState<string | null>(null);
   const limits = AXLE_LOAD_LIMITS.value;
 
   function updateGroup<K extends keyof GroupFormState>(index: number, key: K, value: GroupFormState[K]) {
+    setActiveScenario(null);
     setGroups((prev) => prev.map((g, i) => (i === index ? { ...g, [key]: value } : g)));
+  }
+
+  const scenarioList: Scenario<GroupFormState[]>[] = useMemo(
+    () => [
+      { label: "All axles +10%", apply: (gs) => gs.map((g) => ({ ...g, actualLoadKg: round0(toNumber(g.actualLoadKg) * 1.1) })) },
+      { label: "All axles −10%", apply: (gs) => gs.map((g) => ({ ...g, actualLoadKg: round0(toNumber(g.actualLoadKg) * 0.9) })) },
+      { label: "Steering +500kg", apply: (gs) => gs.map((g, i) => (i === 0 ? { ...g, actualLoadKg: round0(toNumber(g.actualLoadKg) + 500) } : g)) },
+      { label: "Drive +1000kg", apply: (gs) => gs.map((g, i) => (i === 1 ? { ...g, actualLoadKg: round0(toNumber(g.actualLoadKg) + 1000) } : g)) },
+      { label: "Trailer axles +5%", apply: (gs) => gs.map((g, i) => (i >= 2 ? { ...g, actualLoadKg: round0(toNumber(g.actualLoadKg) * 1.05) } : g)) },
+    ],
+    []
+  );
+
+  function applyScenario(scenario: Scenario<GroupFormState[]>) {
+    setGroups((prev) => scenario.apply(prev));
+    setActiveScenario(scenario.label);
   }
 
   const result = useMemo(
@@ -46,6 +73,13 @@ export default function LoadOptimisationCalculator() {
   );
 
   const hasEnoughToShow = groups.some((g) => g.actualLoadKg);
+  const chartData = result.groups.map((g) => ({ label: g.label, value: g.actualLoadKg }));
+
+  function groupGaugeStatus(percent: number): GaugeStatus {
+    if (percent > 100) return "danger";
+    if (percent >= 90) return "warning";
+    return "healthy";
+  }
 
   function buildAiPrompt(): string {
     const lines = result.groups.map(
@@ -64,18 +98,21 @@ ${lines.join("\n")}
           Is this load legal to move, axle by axle?
         </h1>
         <p className="mt-6 text-lg leading-relaxed text-body">
-          Enter what each axle group is actually carrying and check it
-          against the harmonized regional axle load limits — the same
-          Tripartite framework Zambia operates under.
+          Adjust the levers, watch the number respond. Enter what each axle
+          group is actually carrying and check it against the harmonized
+          regional axle load limits — the same Tripartite framework Zambia
+          operates under.
         </p>
       </div>
 
       <div className="mt-12 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_420px]">
         <div className="space-y-6">
-          {groups.map((group, index) => (
-            <fieldset key={index} className="card-surface p-6">
-              <legend className="px-1 text-sm font-semibold text-navy">{group.label}</legend>
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {groups.map((group, index) => {
+            const resultGroup = result.groups[index];
+            const percent = resultGroup ? (resultGroup.actualLoadKg / resultGroup.allowedLoadKg) * 100 : 0;
+            return (
+              <fieldset key={index} className="card-surface space-y-4 p-6">
+                <legend className="px-1 text-sm font-semibold text-navy">{group.label}</legend>
                 <SelectField
                   id={`grouptype-${index}`}
                   label="Axle group type"
@@ -83,23 +120,37 @@ ${lines.join("\n")}
                   onChange={(v) => updateGroup(index, "groupType", v as AxleGroupType)}
                   options={groupTypeOptions}
                 />
-                <NumberField
+                <SliderField
                   id={`load-${index}`}
-                  label="Actual load (kg)"
-                  value={group.actualLoadKg}
-                  onChange={(v) => updateGroup(index, "actualLoadKg", v)}
-                  placeholder="0"
-                  step="100"
+                  label="Actual load"
+                  value={toNumber(group.actualLoadKg)}
+                  onChange={(v) => updateGroup(index, "actualLoadKg", v.toString())}
+                  max={30000}
+                  step={100}
+                  unit="kg"
                 />
-              </div>
-            </fieldset>
-          ))}
+                {resultGroup && toNumber(group.actualLoadKg) > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-muted">
+                        {resultGroup.actualLoadKg.toLocaleString()} / {resultGroup.allowedLoadKg.toFixed(0)} kg
+                      </span>
+                      <span className="font-semibold text-navy">{percent.toFixed(0)}%</span>
+                    </div>
+                    <div className="mt-1.5">
+                      <HealthGauge percent={percent} status={groupGaugeStatus(percent)} />
+                    </div>
+                  </div>
+                )}
+              </fieldset>
+            );
+          })}
 
           <p className="text-xs text-muted">{formatSourceLabel(AXLE_LOAD_LIMITS)}. {AXLE_LOAD_LIMITS.note}</p>
         </div>
 
         <div className="lg:sticky lg:top-24 lg:self-start">
-          <div className="card-surface p-6">
+          <div className="df-tilt-card card-surface p-6">
             {hasEnoughToShow ? (
               <>
                 <span
@@ -113,12 +164,19 @@ ${lines.join("\n")}
                 </span>
                 <p className="mt-4 text-sm font-medium text-muted">Total actual weight</p>
                 <p className="mt-1 text-4xl font-bold text-navy">
-                  {result.totalActualWeightKg.toLocaleString()}
+                  <HeroMetric value={result.totalActualWeightKg} formatter={(v) => Math.round(v).toLocaleString()} />
                   <span className="text-lg font-medium text-muted"> kg</span>
                 </p>
                 <p className="mt-1 text-sm text-muted">{result.totalAxleCount} axles tracked</p>
 
-                <div className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
+                <div className="mt-6 border-t border-border pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Load by axle group</p>
+                  <div className="mt-2">
+                    <MiniBarChart data={chartData} />
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-3 border-t border-border pt-4 text-sm">
                   {result.groups.map((g, i) => (
                     <div key={i} className="flex items-center justify-between">
                       <span className="text-body">{g.label}</span>
@@ -142,6 +200,13 @@ ${lines.join("\n")}
                       No sourced GVM cap applies below 6 total axles — only per-axle-group limits are checked.
                     </p>
                   )}
+                </div>
+
+                <div className="mt-6 border-t border-border pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Try a scenario</p>
+                  <div className="mt-3">
+                    <ScenarioRow scenarios={scenarioList} onApply={applyScenario} activeLabel={activeScenario} />
+                  </div>
                 </div>
 
                 <AiInsightPanel feature="load-optimisation" buildPrompt={buildAiPrompt} />

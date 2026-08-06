@@ -5,8 +5,13 @@ import Link from "next/link";
 import { calculateFuelEfficiency, type FuelEfficiencyInputs } from "@/lib/calculators/fuelEfficiency";
 import { DIESEL_PRICE_ZMW_PER_LITRE, formatSourceLabel } from "@/lib/benchmarks";
 import { whatsappHref } from "@/lib/nav";
-import { NumberField, toNumber, formatZmw } from "@/components/intelligence-hub/NumberField";
+import { toNumber, formatZmw } from "@/components/intelligence-hub/NumberField";
 import { AiInsightPanel } from "@/components/intelligence-hub/AiInsightPanel";
+import { SliderField } from "@/components/intelligence-hub/SliderField";
+import { HeroMetric } from "@/components/intelligence-hub/HeroMetric";
+import { MiniBarChart } from "@/components/intelligence-hub/MiniBarChart";
+import { HealthGauge, type GaugeStatus } from "@/components/intelligence-hub/HealthGauge";
+import { ScenarioRow, type Scenario } from "@/components/intelligence-hub/ScenarioRow";
 
 type FormState = {
   distanceKm: string;
@@ -16,40 +21,66 @@ type FormState = {
 };
 
 const initialState: FormState = {
-  distanceKm: "",
-  actualFuelUsedLitres: "",
-  expectedConsumptionLPer100Km: "",
+  distanceKm: "1000",
+  actualFuelUsedLitres: "400",
+  expectedConsumptionLPer100Km: "38",
   fuelPriceZmwPerLitre: DIESEL_PRICE_ZMW_PER_LITRE.value.toString(),
 };
 
-const flagCopy: Record<string, { label: string; className: string; description: string }> = {
+const flagCopy: Record<string, { label: string; className: string; description: string; gauge: GaugeStatus }> = {
   "below-expected": {
     label: "Below expected",
     className: "bg-[color-mix(in_srgb,var(--df-emerald)_12%,transparent)] text-emerald",
     description: "Using less fuel than your baseline for this distance — worth understanding why, in case it's a fluke.",
+    gauge: "healthy",
   },
   normal: {
     label: "On track",
     className: "bg-[color-mix(in_srgb,var(--df-border)_60%,transparent)] text-muted",
     description: "Within normal range of your expected consumption for this distance.",
+    gauge: "healthy",
   },
   "above-expected": {
     label: "Above expected",
     className: "bg-[color-mix(in_srgb,var(--df-amber)_14%,transparent)] text-amber",
     description: "10–20% over your baseline — could be load, route, or driver behaviour. Worth a look.",
+    gauge: "warning",
   },
   "significantly-above-expected": {
     label: "Significantly above expected",
     className: "bg-[color-mix(in_srgb,var(--df-danger)_12%,transparent)] text-danger",
     description: "20%+ over your baseline — under-inflated tyres, excessive idling, or a fuel leak/theft are worth ruling out.",
+    gauge: "danger",
   },
 };
 
+function round2(n: number): string {
+  return (Math.round(n * 100) / 100).toString();
+}
+
 export default function FuelEfficiencyCalculator() {
   const [form, setForm] = useState<FormState>(initialState);
+  const [activeScenario, setActiveScenario] = useState<string | null>(null);
 
   function set<K extends keyof FormState>(key: K, value: string) {
+    setActiveScenario(null);
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  const scenarios: Scenario<FormState>[] = useMemo(
+    () => [
+      { label: "Actual fuel +10%", apply: (f) => ({ ...f, actualFuelUsedLitres: round2(toNumber(f.actualFuelUsedLitres) * 1.1) }) },
+      { label: "Actual fuel −10%", apply: (f) => ({ ...f, actualFuelUsedLitres: round2(toNumber(f.actualFuelUsedLitres) * 0.9) }) },
+      { label: "Distance +20%", apply: (f) => ({ ...f, distanceKm: Math.round(toNumber(f.distanceKm) * 1.2).toString() }) },
+      { label: "Looser baseline +2 L/100km", apply: (f) => ({ ...f, expectedConsumptionLPer100Km: round2(toNumber(f.expectedConsumptionLPer100Km) + 2) }) },
+      { label: "Diesel price +10%", apply: (f) => ({ ...f, fuelPriceZmwPerLitre: round2(toNumber(f.fuelPriceZmwPerLitre) * 1.1) }) },
+    ],
+    []
+  );
+
+  function applyScenario(scenario: Scenario<FormState>) {
+    setForm((prev) => scenario.apply(prev));
+    setActiveScenario(scenario.label);
   }
 
   const inputs: FuelEfficiencyInputs = useMemo(
@@ -66,6 +97,12 @@ export default function FuelEfficiencyCalculator() {
   const hasEnoughToShow =
     inputs.distanceKm > 0 && inputs.actualFuelUsedLitres > 0 && inputs.expectedConsumptionLPer100Km > 0;
   const flag = flagCopy[result.flag];
+  const onTargetPercent = Math.max(0, 100 - Math.abs(result.variancePercent));
+
+  const chartData = [
+    { label: "Expected", value: result.expectedFuelLitres },
+    { label: "Actual", value: inputs.actualFuelUsedLitres },
+  ];
 
   function buildAiPrompt(): string {
     return `Fuel efficiency check for a ${inputs.distanceKm} km trip:
@@ -84,59 +121,65 @@ export default function FuelEfficiencyCalculator() {
           Is your fuel consumption where it should be?
         </h1>
         <p className="mt-6 text-lg leading-relaxed text-body">
-          Compare what a trip actually used against your own expected
-          baseline for that vehicle. A gap of more than 10–20% is usually
-          worth investigating — tyres, idling, route, or the fuel itself.
+          Adjust the levers, watch the number respond. Compare what a trip
+          actually used against your own expected baseline for that
+          vehicle. A gap of more than 10–20% is usually worth
+          investigating — tyres, idling, route, or the fuel itself.
         </p>
       </div>
 
       <div className="mt-12 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_420px]">
         <div className="space-y-8">
-          <fieldset className="card-surface p-6">
+          <fieldset className="card-surface space-y-6 p-6">
             <legend className="px-1 text-sm font-semibold text-navy">This trip</legend>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <NumberField
-                id="distanceKm"
-                label="Distance covered (km)"
-                value={form.distanceKm}
-                onChange={(v) => set("distanceKm", v)}
-                placeholder="e.g. 1000"
-                step="1"
-              />
-              <NumberField
-                id="actualFuelUsedLitres"
-                label="Fuel actually used (litres)"
-                value={form.actualFuelUsedLitres}
-                onChange={(v) => set("actualFuelUsedLitres", v)}
-                placeholder="e.g. 380"
-              />
-            </div>
+            <SliderField
+              id="distanceKm"
+              label="Distance covered"
+              value={toNumber(form.distanceKm)}
+              onChange={(v) => set("distanceKm", v.toString())}
+              max={5000}
+              step={25}
+              unit="km"
+            />
+            <SliderField
+              id="actualFuelUsedLitres"
+              label="Fuel actually used"
+              value={toNumber(form.actualFuelUsedLitres)}
+              onChange={(v) => set("actualFuelUsedLitres", v.toString())}
+              max={2000}
+              step={10}
+              unit="litres"
+            />
           </fieldset>
 
-          <fieldset className="card-surface p-6">
+          <fieldset className="card-surface space-y-6 p-6">
             <legend className="px-1 text-sm font-semibold text-navy">Your baseline</legend>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <NumberField
-                id="expectedConsumptionLPer100Km"
-                label="Expected consumption (L/100km)"
-                value={form.expectedConsumptionLPer100Km}
-                onChange={(v) => set("expectedConsumptionLPer100Km", v)}
-                placeholder="e.g. 38"
-                hint="This vehicle's own normal consumption — from its manual or your historical average. No industry default is used here on purpose; it varies too much by vehicle and load."
-              />
-              <NumberField
-                id="fuelPriceZmwPerLitre"
-                label="Diesel price (ZMW/litre)"
-                value={form.fuelPriceZmwPerLitre}
-                onChange={(v) => set("fuelPriceZmwPerLitre", v)}
-                hint={`Pre-filled from ${formatSourceLabel(DIESEL_PRICE_ZMW_PER_LITRE)}.`}
-              />
-            </div>
+            <SliderField
+              id="expectedConsumptionLPer100Km"
+              label="Expected consumption"
+              value={toNumber(form.expectedConsumptionLPer100Km)}
+              onChange={(v) => set("expectedConsumptionLPer100Km", v.toString())}
+              min={10}
+              max={80}
+              step={0.5}
+              unit="L/100km"
+              hint="This vehicle's own normal consumption — from its manual or your historical average. No industry default is used here on purpose; it varies too much by vehicle and load."
+            />
+            <SliderField
+              id="fuelPriceZmwPerLitre"
+              label="Diesel price"
+              value={toNumber(form.fuelPriceZmwPerLitre)}
+              onChange={(v) => set("fuelPriceZmwPerLitre", v.toString())}
+              max={75}
+              step={0.1}
+              unit="ZMW/L"
+              hint={`Pre-filled from ${formatSourceLabel(DIESEL_PRICE_ZMW_PER_LITRE)}.`}
+            />
           </fieldset>
         </div>
 
         <div className="lg:sticky lg:top-24 lg:self-start">
-          <div className="card-surface p-6">
+          <div className="df-tilt-card card-surface p-6">
             {hasEnoughToShow ? (
               <>
                 <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${flag.className}`}>
@@ -144,10 +187,27 @@ export default function FuelEfficiencyCalculator() {
                 </span>
                 <p className="mt-4 text-sm font-medium text-muted">Actual consumption</p>
                 <p className="mt-1 text-4xl font-bold text-navy">
-                  {result.actualConsumptionLPer100Km.toFixed(1)}
+                  <HeroMetric value={result.actualConsumptionLPer100Km} formatter={(v) => v.toFixed(1)} />
                   <span className="text-lg font-medium text-muted"> L/100km</span>
                 </p>
                 <p className="mt-1 text-sm text-muted">{flag.description}</p>
+
+                <div className="mt-4">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-muted">On-target</span>
+                    <span className="font-semibold text-navy">{onTargetPercent.toFixed(0)}%</span>
+                  </div>
+                  <div className="mt-1.5">
+                    <HealthGauge percent={onTargetPercent} status={flag.gauge} />
+                  </div>
+                </div>
+
+                <div className="mt-6 border-t border-border pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Expected vs. actual</p>
+                  <div className="mt-2">
+                    <MiniBarChart data={chartData} />
+                  </div>
+                </div>
 
                 <dl className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
                   <div className="flex items-center justify-between">
@@ -164,7 +224,9 @@ export default function FuelEfficiencyCalculator() {
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Actual fuel cost</dt>
-                    <dd className="font-medium text-navy">{formatZmw(result.actualCostZmw)}</dd>
+                    <dd className="font-medium text-navy">
+                      <HeroMetric value={result.actualCostZmw} formatter={(v) => formatZmw(v)} />
+                    </dd>
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Cost variance</dt>
@@ -174,6 +236,13 @@ export default function FuelEfficiencyCalculator() {
                     </dd>
                   </div>
                 </dl>
+
+                <div className="mt-6 border-t border-border pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Try a scenario</p>
+                  <div className="mt-3">
+                    <ScenarioRow scenarios={scenarios} onApply={applyScenario} activeLabel={activeScenario} />
+                  </div>
+                </div>
 
                 <AiInsightPanel feature="fuel-efficiency" buildPrompt={buildAiPrompt} />
               </>
