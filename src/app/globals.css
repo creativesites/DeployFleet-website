@@ -174,4 +174,71 @@
     text-transform: uppercase;
     color: var(--df-teal);
   }
+
+  /* Fleet Control Panel — SliderField's native range input. The track's
+     gradient fill is set inline per-instance (depends on the current
+     value); this only styles the thumb and the track's base look, which
+     is identical across every slider. */
+  .df-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .df-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 3px solid var(--df-teal);
+    box-shadow: 0 2px 8px rgba(10, 17, 40, 0.25);
+    transition: transform 0.15s ease;
+  }
+
+  .df-slider::-webkit-slider-thumb:hover,
+  .df-slider::-webkit-slider-thumb:active {
+    transform: scale(1.15);
+  }
+
+  .df-slider::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 3px solid var(--df-teal);
+    box-shadow: 0 2px 8px rgba(10, 17, 40, 0.25);
+    transition: transform 0.15s ease;
+  }
+
+  .df-slider::-moz-range-thumb:hover,
+  .df-slider::-moz-range-thumb:active {
+    transform: scale(1.15);
+  }
+
+  .df-slider::-moz-range-track {
+    height: 8px;
+    border-radius: 999px;
+    background: transparent;
+  }
+
+  /* A tasteful, fixed-angle depth tilt for the flagship result panel —
+     CSS-only, no mouse-tracking JS, respects prefers-reduced-motion via
+     the transition itself being harmless when motion is reduced (it's a
+     hover affordance, not an autoplaying animation). */
+  .df-tilt-card {
+    transform-style: preserve-3d;
+    transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease;
+  }
+
+  @media (hover: hover) {
+    .df-tilt-card:hover {
+      transform: perspective(1000px) rotateX(1.5deg) rotateY(-1.5deg) translateY(-3px);
+    }
+  }
 }
