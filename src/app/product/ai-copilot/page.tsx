@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import ScreenshotPlaceholder from "@/components/ScreenshotPlaceholder";
+import Screenshot from "@/components/Screenshot";
 import Link from "next/link";
 import { whatsappHref } from "@/lib/nav";
 
@@ -40,10 +40,11 @@ export default function AiCopilotPage() {
         className="card-surface mt-10 p-2 sm:p-3"
         style={{ borderColor: "color-mix(in srgb, var(--df-ai-violet) 25%, var(--df-border))" }}
       >
-        <ScreenshotPlaceholder
-          label="Copilot Console — agent catalog + usage dashboard"
-          hint="public/screenshots/copilot-console.png"
-          aspect="video"
+        <Screenshot
+          src="/screenshots/copilot-console.jpg"
+          alt="DeployFleet Copilot Console — usage & cost dashboard and the six-agent catalog"
+          width={1080}
+          height={1047}
         />
       </div>
 
@@ -62,6 +63,32 @@ export default function AiCopilotPage() {
             <p className="mt-2 text-sm leading-relaxed text-body">{agent.body}</p>
           </div>
         ))}
+      </div>
+
+      <div className="mt-16 grid grid-cols-1 items-center gap-10 lg:grid-cols-2">
+        <div>
+          <span className="section-eyebrow" style={{ color: "var(--df-ai-violet)" }}>
+            Real predictions, not a mockup
+          </span>
+          <h2 className="mt-3 text-2xl font-bold text-navy">The Maintenance Agent, at work.</h2>
+          <p className="mt-4 text-base leading-relaxed text-body">
+            Every prediction is a genuine computed risk score — trend in fuel
+            consumption, recent workshop activity, and more — with the
+            reasoning shown alongside it, not just a number. High-risk
+            vehicles surface first, low-risk ones stay out of the way.
+          </p>
+        </div>
+        <div
+          className="card-surface p-2 sm:p-3"
+          style={{ borderColor: "color-mix(in srgb, var(--df-ai-violet) 25%, var(--df-border))" }}
+        >
+          <Screenshot
+            src="/screenshots/ai-predictions.jpg"
+            alt="DeployFleet AI Predictions — fleet-wide maintenance risk, worst-first"
+            width={1080}
+            height={1023}
+          />
+        </div>
       </div>
 
       <div className="mt-16 grid gap-6 sm:grid-cols-2">

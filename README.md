@@ -78,18 +78,23 @@ They now cover most of the site: `public/screenshots/` holds
 `mission-control.png`, `mission-control-mobile.mp4`, `dispatch-board.png`,
 `dispatch-assign.png`, `fleet-command-center-list.png`, `vehicle-360.png`,
 `maintenance-center.png`, `compliance-center.png`,
-`financial-intelligence.png`, and `launcher.jpg`, wired into the homepage
-sections and product pages via the `Screenshot` component. `financial-
-intelligence.png` is currently reused on the Billing page as an
-approximate fit (it's Financial Intelligence, not literally the Invoice
-Ledger the label used to describe) — swap for a dedicated shot when one
-exists. **Still a labeled placeholder** (`ScreenshotPlaceholder`, label
-text doubles as the shot needed):
-- Homepage AI Copilot section — needs a Copilot Rail chat screenshot
-  (with a tool-lookup line visible) — waiting on the Copilot Rail's
-  current round of updates to finish before the real shot is taken.
-- `/product/ai-copilot` — needs a Copilot Console screenshot — same
-  wait.
+`financial-intelligence.png`, `copilot-console.jpg`, `ai-predictions.jpg`,
+and `launcher.jpg`, wired into the homepage sections and product pages via
+the `Screenshot` component. `financial-intelligence.png` is currently
+reused on the Billing page as an approximate fit (it's Financial
+Intelligence, not literally the Invoice Ledger the label used to
+describe) — swap for a dedicated shot when one exists. `/product/
+ai-copilot` now carries two real screenshots: the Copilot Console (usage
+& cost dashboard, agent catalog) in the original placeholder slot, plus a
+second "Real predictions, not a mockup" section further down showing the
+Maintenance Agent's actual AI Predictions screen — added because the
+screenshot didn't fit the existing "Copilot Rail chat" slot (it's a
+different screen entirely) but was too good a real-data visual not to use
+somewhere. **Still a labeled placeholder** (`ScreenshotPlaceholder`,
+label text doubles as the shot needed):
+- Homepage AI Copilot section — still needs a Copilot Rail chat
+  screenshot (with a tool-lookup line visible) — waiting on the Copilot
+  Rail's current round of updates to finish before that one's taken.
 
 The Hero renders a single landscape `hero-video.mp4` (1280×720) at every
 breakpoint (`object-cover` inside a responsive `max-w-6xl` frame, not a
