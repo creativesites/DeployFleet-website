@@ -68,6 +68,39 @@ export const NAPSA: SourcedValue<NapsaRates> = {
   note: "5% employee + 5% employer, capped at the monthly earnings ceiling — the deduction cannot exceed the cap regardless of actual salary.",
 };
 
+export interface PayeBand {
+  /** Lower bound of this band, ZMW/month. */
+  fromZmw: number;
+  /** Upper bound, or null for the top, unbounded band. */
+  toZmw: number | null;
+  rate: number;
+}
+
+export const PAYE_BANDS: SourcedValue<PayeBand[]> = {
+  value: [
+    { fromZmw: 0, toZmw: 5100, rate: 0 },
+    { fromZmw: 5100, toZmw: 7100, rate: 0.25 },
+    { fromZmw: 7100, toZmw: 9900, rate: 0.3 },
+    { fromZmw: 9900, toZmw: null, rate: 0.375 },
+  ],
+  source: "ZRA PAYE bands, cross-checked against two independent 2026 payroll guides",
+  asOf: "2026-04-16",
+  confidence: "medium",
+  note: "zra.org.zm's own PAYE calculator and published PDF were unreachable (503) while sourcing this — cross-verified instead against two independent Zambian payroll-guide sites that agree on these exact bands. Confirm against ZRA directly before relying on this for a real payslip. Bands apply progressively: an employee's income is taxed band-by-band, not at one flat rate on the full amount. NAPSA (employee share) is deducted before PAYE is calculated; NHIMA is not.",
+};
+
+export interface NhimaRate {
+  employeeRate: number;
+}
+
+export const NHIMA: SourcedValue<NhimaRate> = {
+  value: { employeeRate: 0.01 },
+  source: "NHIMA Act contribution rate, cross-checked against two independent 2026 payroll guides",
+  asOf: "2026-04-16",
+  confidence: "medium",
+  note: "1% of gross salary, no ceiling — unlike NAPSA. Same ZRA-site-unreachable caveat as PAYE_BANDS above.",
+};
+
 export interface HeavyVehicleTolls {
   fourPlusAxleHeavyZmw: number;
   twoToFourAxleMediumHeavyZmw: number;

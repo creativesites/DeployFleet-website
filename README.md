@@ -210,17 +210,46 @@ results:
   Layer 1 result is never blocked, hidden, or cast into doubt by an AI
   failure.
 
-**41 tests total** (`npm run test`): 25 Phase A engine tests + 6 router +
-5 rateLimit + 5 cache.
-
 See `.env.example` for the environment variables Phase B reads (all
 optional — every calculator's core result works with none of them set).
 
-**Not yet built:** the other 7 calculators (Driver Pay & Advance, Fleet
-TCO, Break-Even Utilisation, Compliance Risk, Tyre CPK, Load Optimisation,
-ROI/Payback) — see the plan's roadmap §10 for the order; Driver Pay &
-Advance, Fleet TCO, and Break-Even Utilisation are next, still
-engine-only per the roadmap.
+**Phase B's 3 additional engine-only calculators are also complete,
+closing Phase B in full:**
+- **Driver Pay & Advance** (`/intelligence-hub/driver-pay`) — gross pay
+  (base + overtime + trip allowances), NAPSA, PAYE (progressive bands,
+  applied after NAPSA per the standard order), NHIMA, an advance-recovery
+  deduction clamped to both the outstanding balance and what's left after
+  statutory deductions, net payable. `driverPay.ts` (8 tests).
+- **Fleet Total Cost of Ownership** (`/intelligence-hub/fleet-tco`) — a
+  year-by-year projection (purchase price, running costs that grow at a
+  configurable rate as the vehicle ages, resale value that decays at a
+  configurable rate, floored at 5% of purchase price) computing the
+  equivalent annual cost at each year and identifying the lowest-cost
+  replacement year — a genuine interior minimum when maintenance grows
+  faster than resale decays, not just "the last year in the horizon."
+  `fleetTco.ts` (6 tests). Deliberately no discounting/present-value or
+  tax-shield modelling — kept simple on purpose, said so on the page.
+- **Break-Even Utilisation** (`/intelligence-hub/break-even`) — break-even
+  km/truck/month from the contribution margin (revenue − variable cost per
+  km) against fixed costs, current utilisation vs. break-even, fleet-wide
+  monthly profit, and a monthly cash-flow projection with an optional
+  linear ramp-up period (a new truck/route rarely starts at full
+  utilisation) showing which month cumulative cash flow turns positive.
+  `breakEvenUtilisation.ts` (8 tests). An unprofitable rate (revenue below
+  variable cost) is handled explicitly — "not achievable at this rate,"
+  not a divide-by-zero or a misleading number.
+
+All three reuse the same AI Insight panel pattern as the Phase A three —
+`feature` is a plain string, no allowlist to extend on the Route Handler
+side.
+
+**63 tests total** (`npm run test`): 25 Phase A + 22 Phase B engines (8 +
+6 + 8) + 6 router + 5 rateLimit + 5 cache.
+
+**All 6 Phase A + B calculators are now live** in `intelligenceHubCalculators`
+(`src/lib/nav.ts`) and listed on the Hub index under "Available now" — only
+Phase C (Compliance & Penalty Risk, Tyre CPK) and Phase D (Load
+Optimisation, ROI/Payback) remain, per the plan's roadmap §10.
 
 **Benchmark data** (`src/lib/benchmarks.ts`) — every value is sourced and
 dated, per the data-integrity rule in the plan §06:
@@ -229,6 +258,14 @@ dated, per the data-integrity rule in the plan §06:
   constant.
 - NAPSA: 5%+5% split, K37,236/month ceiling, capping the deduction at
   K1,861.80 — effective 1 Jan 2026.
+- PAYE: progressive monthly bands (K0–5,100 at 0%, 5,101–7,100 at 25%,
+  7,101–9,900 at 30%, above 9,900 at 37.5%) — cross-checked against two
+  independent 2026 Zambian payroll guides after ZRA's own site (both the
+  PAYE calculator page and the published PDF) returned `503` on every
+  fetch attempt while sourcing this. Confidence is `medium`, not `high`,
+  for exactly that reason — confirm against ZRA directly before relying
+  on this for a real payslip. Same caveat applies to NHIMA (1% of gross,
+  no cap), sourced the same way.
 - Heavy-vehicle tolls: K300/gate (4+ axle), K200/gate (2–4 axle
   medium-heavy) — NRFA, effective 1 Jan 2026.
 
