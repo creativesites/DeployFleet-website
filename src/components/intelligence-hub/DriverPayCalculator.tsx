@@ -3,67 +3,72 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { calculateDriverPay, type DriverPayInputs } from "@/lib/calculators/driverPay";
-import { NAPSA, NHIMA, PAYE_BANDS, formatSourceLabel } from "@/lib/benchmarks";
+import { formatMoney } from "@/lib/countries";
 import { whatsappHref } from "@/lib/nav";
-import { NumberField, toNumber, formatZmw } from "@/components/intelligence-hub/NumberField";
+import { NumberField, toNumber } from "@/components/intelligence-hub/NumberField";
 import { AiInsightPanel } from "@/components/intelligence-hub/AiInsightPanel";
+import { CountrySelector } from "@/components/intelligence-hub/CountrySelector";
+import { useSelectedCountry } from "@/components/intelligence-hub/useSelectedCountry";
 
 type FormState = {
-  baseSalaryMonthlyZmw: string;
+  baseSalaryMonthly: string;
   overtimeHours: string;
-  overtimeRateZmwPerHour: string;
-  tripAllowancesMonthlyZmw: string;
-  otherDeductionsZmw: string;
-  outstandingAdvanceBalanceZmw: string;
-  advanceDeductionRequestedZmw: string;
+  overtimeRatePerHour: string;
+  tripAllowancesMonthly: string;
+  otherDeductions: string;
+  outstandingAdvanceBalance: string;
+  advanceDeductionRequested: string;
 };
 
 const initialState: FormState = {
-  baseSalaryMonthlyZmw: "",
+  baseSalaryMonthly: "",
   overtimeHours: "",
-  overtimeRateZmwPerHour: "",
-  tripAllowancesMonthlyZmw: "",
-  otherDeductionsZmw: "",
-  outstandingAdvanceBalanceZmw: "",
-  advanceDeductionRequestedZmw: "",
+  overtimeRatePerHour: "",
+  tripAllowancesMonthly: "",
+  otherDeductions: "",
+  outstandingAdvanceBalance: "",
+  advanceDeductionRequested: "",
 };
 
 export default function DriverPayCalculator() {
   const [form, setForm] = useState<FormState>(initialState);
+  const { country, countryCode, selectCountry } = useSelectedCountry();
 
   function set<K extends keyof FormState>(key: K, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  const inputs: DriverPayInputs = useMemo(
-    () => ({
-      baseSalaryMonthlyZmw: toNumber(form.baseSalaryMonthlyZmw),
-      overtimeHours: toNumber(form.overtimeHours),
-      overtimeRateZmwPerHour: toNumber(form.overtimeRateZmwPerHour),
-      tripAllowancesMonthlyZmw: toNumber(form.tripAllowancesMonthlyZmw),
-      otherDeductionsZmw: toNumber(form.otherDeductionsZmw),
-      outstandingAdvanceBalanceZmw: toNumber(form.outstandingAdvanceBalanceZmw),
-      advanceDeductionRequestedZmw: toNumber(form.advanceDeductionRequestedZmw),
-      napsaEmployeeRate: NAPSA.value.employeeRate,
-      napsaEmployeeCapZmw: NAPSA.value.employeeCapZmw,
-      nhimaEmployeeRate: NHIMA.value.employeeRate,
-      payeBands: PAYE_BANDS.value,
-    }),
-    [form]
-  );
+  const money = (v: number) => formatMoney(v, country);
+  const available = country.coverage === "full" && country.incomeTax && country.socialSecurity;
 
-  const result = useMemo(() => calculateDriverPay(inputs), [inputs]);
-  const hasEnoughToShow = inputs.baseSalaryMonthlyZmw > 0;
+  const inputs: DriverPayInputs | null = useMemo(() => {
+    if (!available || !country.incomeTax || !country.socialSecurity) return null;
+    return {
+      baseSalaryMonthly: toNumber(form.baseSalaryMonthly),
+      overtimeHours: toNumber(form.overtimeHours),
+      overtimeRatePerHour: toNumber(form.overtimeRatePerHour),
+      tripAllowancesMonthly: toNumber(form.tripAllowancesMonthly),
+      otherDeductions: toNumber(form.otherDeductions),
+      outstandingAdvanceBalance: toNumber(form.outstandingAdvanceBalance),
+      advanceDeductionRequested: toNumber(form.advanceDeductionRequested),
+      incomeTax: country.incomeTax.value,
+      socialSecurity: country.socialSecurity.value,
+      secondaryLevy: country.secondaryLevy?.value ?? null,
+    };
+  }, [available, country, form]);
+
+  const result = useMemo(() => (inputs ? calculateDriverPay(inputs) : null), [inputs]);
+  const hasEnoughToShow = result !== null && (inputs?.baseSalaryMonthly ?? 0) > 0;
 
   function buildAiPrompt(): string {
-    return `Driver pay calculation for one month:
-- Gross pay: ${formatZmw(result.grossPayZmw)} (base + overtime + trip allowances)
-- NAPSA (employee): ${formatZmw(result.napsaEmployeeZmw)}
-- PAYE: ${formatZmw(result.payeZmw)}
-- NHIMA: ${formatZmw(result.nhimaZmw)}
-- Advance deducted this period: ${formatZmw(result.advanceDeductionAppliedZmw)} (${formatZmw(result.remainingAdvanceBalanceZmw)} still outstanding)
-- Other deductions: ${formatZmw(result.otherDeductionsAppliedZmw)}
-- Net payable: ${formatZmw(result.netPayableZmw)}`;
+    if (!result) return "";
+    return `Driver pay calculation for one month, ${country.name} (${country.currencyCode}):
+- Gross pay: ${money(result.grossPay)} (base + overtime + trip allowances)
+- ${result.socialSecurityLabel} (employee): ${money(result.socialSecurityAmount)}
+- Income tax: ${money(result.incomeTaxAmount)}${result.taxLevyAmount > 0 ? ` + ${result.taxLevyLabel} ${money(result.taxLevyAmount)}` : ""}
+${result.secondaryLevyAmount > 0 ? `- ${result.secondaryLevyLabel}: ${money(result.secondaryLevyAmount)}\n` : ""}- Advance deducted this period: ${money(result.advanceDeductionApplied)} (${money(result.remainingAdvanceBalance)} still outstanding)
+- Other deductions: ${money(result.otherDeductionsApplied)}
+- Net payable: ${money(result.netPayable)}`;
   }
 
   return (
@@ -74,30 +79,37 @@ export default function DriverPayCalculator() {
           What does a driver actually take home this month?
         </h1>
         <p className="mt-6 text-lg leading-relaxed text-body">
-          Base pay, overtime, and trip allowances in — NAPSA, PAYE, NHIMA,
-          and any advance recovery worked out correctly, net pay out. The
-          statutory deductions use the current Zambian rates, sourced and
-          dated below.
+          Base pay, overtime, and trip allowances in — statutory
+          deductions and any advance recovery worked out correctly, net
+          pay out. Pick your country below; the deduction rules and
+          currency switch to match.
         </p>
       </div>
 
       <div className="mt-12 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_420px]">
         <div className="space-y-8">
           <fieldset className="card-surface p-6">
+            <legend className="px-1 text-sm font-semibold text-navy">Country</legend>
+            <div className="mt-4">
+              <CountrySelector countryCode={countryCode} onChange={selectCountry} />
+            </div>
+          </fieldset>
+
+          <fieldset className="card-surface p-6">
             <legend className="px-1 text-sm font-semibold text-navy">Pay this month</legend>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <NumberField
-                id="baseSalaryMonthlyZmw"
+                id="baseSalaryMonthly"
                 label="Base salary (monthly)"
-                value={form.baseSalaryMonthlyZmw}
-                onChange={(v) => set("baseSalaryMonthlyZmw", v)}
+                value={form.baseSalaryMonthly}
+                onChange={(v) => set("baseSalaryMonthly", v)}
                 placeholder="e.g. 8000"
               />
               <NumberField
-                id="tripAllowancesMonthlyZmw"
+                id="tripAllowancesMonthly"
                 label="Trip allowances (monthly)"
-                value={form.tripAllowancesMonthlyZmw}
-                onChange={(v) => set("tripAllowancesMonthlyZmw", v)}
+                value={form.tripAllowancesMonthly}
+                onChange={(v) => set("tripAllowancesMonthly", v)}
                 placeholder="0"
               />
               <NumberField
@@ -109,10 +121,10 @@ export default function DriverPayCalculator() {
                 step="1"
               />
               <NumberField
-                id="overtimeRateZmwPerHour"
-                label="Overtime rate (ZMW/hour)"
-                value={form.overtimeRateZmwPerHour}
-                onChange={(v) => set("overtimeRateZmwPerHour", v)}
+                id="overtimeRatePerHour"
+                label={`Overtime rate (${country.currencyCode}/hour)`}
+                value={form.overtimeRatePerHour}
+                onChange={(v) => set("overtimeRatePerHour", v)}
                 placeholder="0"
               />
             </div>
@@ -122,97 +134,120 @@ export default function DriverPayCalculator() {
             <legend className="px-1 text-sm font-semibold text-navy">Advance &amp; other deductions</legend>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <NumberField
-                id="outstandingAdvanceBalanceZmw"
+                id="outstandingAdvanceBalance"
                 label="Outstanding advance balance"
-                value={form.outstandingAdvanceBalanceZmw}
-                onChange={(v) => set("outstandingAdvanceBalanceZmw", v)}
+                value={form.outstandingAdvanceBalance}
+                onChange={(v) => set("outstandingAdvanceBalance", v)}
                 placeholder="0"
                 hint="What the driver still owes on a prior advance, before this pay period."
               />
               <NumberField
-                id="advanceDeductionRequestedZmw"
+                id="advanceDeductionRequested"
                 label="Advance to recover this period"
-                value={form.advanceDeductionRequestedZmw}
-                onChange={(v) => set("advanceDeductionRequestedZmw", v)}
+                value={form.advanceDeductionRequested}
+                onChange={(v) => set("advanceDeductionRequested", v)}
                 placeholder="0"
                 hint="Capped automatically at the outstanding balance and at what's left after statutory deductions."
               />
               <NumberField
-                id="otherDeductionsZmw"
+                id="otherDeductions"
                 label="Other deductions"
-                value={form.otherDeductionsZmw}
-                onChange={(v) => set("otherDeductionsZmw", v)}
+                value={form.otherDeductions}
+                onChange={(v) => set("otherDeductions", v)}
                 placeholder="0"
                 hint="Union dues, uniform, etc."
               />
             </div>
           </fieldset>
 
-          <div className="card-surface p-6">
-            <p className="text-sm font-semibold text-navy">Statutory rates used</p>
-            <ul className="mt-3 space-y-2 text-sm text-body">
-              <li>
-                <strong className="text-navy">NAPSA:</strong> {(NAPSA.value.employeeRate * 100).toFixed(0)}% employee
-                share, capped at {formatZmw(NAPSA.value.employeeCapZmw)}/month. {formatSourceLabel(NAPSA)}.
-              </li>
-              <li>
-                <strong className="text-navy">NHIMA:</strong> {(NHIMA.value.employeeRate * 100).toFixed(0)}% of gross,
-                no cap. {formatSourceLabel(NHIMA)}.
-              </li>
-              <li>
-                <strong className="text-navy">PAYE:</strong> progressive bands from K0 to 37.5% above K9,900/month,
-                applied after NAPSA. {formatSourceLabel(PAYE_BANDS)}.
-              </li>
-            </ul>
-            <p className="mt-3 text-xs text-muted">{PAYE_BANDS.note}</p>
-          </div>
+          {available && country.incomeTax && country.socialSecurity && (
+            <div className="card-surface p-6">
+              <p className="text-sm font-semibold text-navy">Statutory rates used — {country.name}</p>
+              <ul className="mt-3 space-y-2 text-sm text-body">
+                <li>
+                  <strong className="text-navy">{country.socialSecurity.value.label}:</strong>{" "}
+                  {(country.socialSecurity.value.employeeRate * 100).toFixed(1)}% employee share, capped at{" "}
+                  {money(country.socialSecurity.value.employeeCapPerMonth)}/month. Source: {country.socialSecurity.source}.
+                </li>
+                {country.secondaryLevy && (
+                  <li>
+                    <strong className="text-navy">{country.secondaryLevy.value.label}:</strong>{" "}
+                    {(country.secondaryLevy.value.employeeRate * 100).toFixed(1)}% of gross,{" "}
+                    {country.secondaryLevy.value.employeeCapPerMonth === null ? "no cap" : `capped at ${money(country.secondaryLevy.value.employeeCapPerMonth)}`}
+                    . Source: {country.secondaryLevy.source}.
+                  </li>
+                )}
+                <li>
+                  <strong className="text-navy">Income tax:</strong> progressive {country.incomeTax.value.period}{" "}
+                  bands{country.incomeTax.value.levyOnTaxPercent > 0 ? `, plus a ${country.incomeTax.value.levyOnTaxPercent}% ${country.incomeTax.value.levyOnTaxLabel} on the computed tax` : ""}. Source:{" "}
+                  {country.incomeTax.source}.
+                </li>
+              </ul>
+              <p className="mt-3 text-xs text-muted">{country.incomeTax.note}</p>
+            </div>
+          )}
         </div>
 
         <div className="lg:sticky lg:top-24 lg:self-start">
           <div className="card-surface p-6">
-            {hasEnoughToShow ? (
+            {!available ? (
+              <div className="py-6 text-center">
+                <p className="text-sm text-muted">
+                  Statutory deduction rules for {country.name} aren&apos;t sourced yet — pick a fully covered
+                  country (Zambia or Zimbabwe) to see a net pay breakdown.
+                </p>
+              </div>
+            ) : hasEnoughToShow && result ? (
               <>
                 <p className="text-sm font-medium text-muted">Net payable</p>
-                <p className="mt-1 text-4xl font-bold text-navy">{formatZmw(result.netPayableZmw)}</p>
-                <p className="mt-1 text-sm text-muted">from {formatZmw(result.grossPayZmw)} gross</p>
+                <p className="mt-1 text-4xl font-bold text-navy">{money(result.netPayable)}</p>
+                <p className="mt-1 text-sm text-muted">from {money(result.grossPay)} gross</p>
 
                 <dl className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Overtime pay</dt>
-                    <dd className="font-medium text-navy">{formatZmw(result.overtimePayZmw)}</dd>
+                    <dd className="font-medium text-navy">{money(result.overtimePay)}</dd>
                   </div>
                   <div className="flex items-center justify-between">
-                    <dt className="text-body">NAPSA (employee)</dt>
-                    <dd className="font-medium text-navy">-{formatZmw(result.napsaEmployeeZmw)}</dd>
+                    <dt className="text-body">{result.socialSecurityLabel} (employee)</dt>
+                    <dd className="font-medium text-navy">-{money(result.socialSecurityAmount)}</dd>
                   </div>
                   <div className="flex items-center justify-between">
-                    <dt className="text-body">PAYE</dt>
-                    <dd className="font-medium text-navy">-{formatZmw(result.payeZmw)}</dd>
+                    <dt className="text-body">Income tax</dt>
+                    <dd className="font-medium text-navy">-{money(result.incomeTaxAmount)}</dd>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <dt className="text-body">NHIMA</dt>
-                    <dd className="font-medium text-navy">-{formatZmw(result.nhimaZmw)}</dd>
-                  </div>
+                  {result.taxLevyAmount > 0 && (
+                    <div className="flex items-center justify-between">
+                      <dt className="text-body">{result.taxLevyLabel}</dt>
+                      <dd className="font-medium text-navy">-{money(result.taxLevyAmount)}</dd>
+                    </div>
+                  )}
+                  {result.secondaryLevyAmount > 0 && (
+                    <div className="flex items-center justify-between">
+                      <dt className="text-body">{result.secondaryLevyLabel}</dt>
+                      <dd className="font-medium text-navy">-{money(result.secondaryLevyAmount)}</dd>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between border-t border-border-soft pt-3">
                     <dt className="text-body">Net before advance</dt>
-                    <dd className="font-medium text-navy">{formatZmw(result.netBeforeAdvanceZmw)}</dd>
+                    <dd className="font-medium text-navy">{money(result.netBeforeAdvance)}</dd>
                   </div>
-                  {result.advanceDeductionAppliedZmw > 0 && (
+                  {result.advanceDeductionApplied > 0 && (
                     <div className="flex items-center justify-between">
                       <dt className="text-body">Advance recovered</dt>
-                      <dd className="font-medium text-navy">-{formatZmw(result.advanceDeductionAppliedZmw)}</dd>
+                      <dd className="font-medium text-navy">-{money(result.advanceDeductionApplied)}</dd>
                     </div>
                   )}
-                  {result.otherDeductionsAppliedZmw > 0 && (
+                  {result.otherDeductionsApplied > 0 && (
                     <div className="flex items-center justify-between">
                       <dt className="text-body">Other deductions</dt>
-                      <dd className="font-medium text-navy">-{formatZmw(result.otherDeductionsAppliedZmw)}</dd>
+                      <dd className="font-medium text-navy">-{money(result.otherDeductionsApplied)}</dd>
                     </div>
                   )}
-                  {result.remainingAdvanceBalanceZmw > 0 && (
+                  {result.remainingAdvanceBalance > 0 && (
                     <div className="flex items-center justify-between">
                       <dt className="text-body">Advance balance remaining</dt>
-                      <dd className="font-medium text-navy">{formatZmw(result.remainingAdvanceBalanceZmw)}</dd>
+                      <dd className="font-medium text-navy">{money(result.remainingAdvanceBalance)}</dd>
                     </div>
                   )}
                 </dl>
