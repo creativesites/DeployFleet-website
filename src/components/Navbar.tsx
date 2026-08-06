@@ -75,7 +75,7 @@ export default function Navbar() {
             Chat on WhatsApp
           </a>
           <Link href="/demo" className="btn-primary text-sm">
-            Book a Demo
+            View Demo
           </Link>
         </div>
 
@@ -116,7 +116,7 @@ export default function Navbar() {
               Chat on WhatsApp
             </a>
             <Link href="/demo" className="btn-primary w-full" onClick={() => setMobileOpen(false)}>
-              Book a Demo
+              View Demo
             </Link>
           </div>
         </div>

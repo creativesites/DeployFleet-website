@@ -61,7 +61,7 @@ export default function Hero() {
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link href="/demo" className="btn-primary w-full sm:w-auto">
-              Book a Demo
+              View Demo
             </Link>
             <a
               href={whatsappHref}

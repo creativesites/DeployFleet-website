@@ -135,7 +135,7 @@ export const footerNav = {
     { label: "Resources", href: "/resources" },
   ] as NavLink[],
   get: [
-    { label: "Book a Demo", href: "/demo" },
+    { label: "View Demo", href: "/demo" },
     { label: "Contact", href: "/contact" },
   ] as NavLink[],
 };

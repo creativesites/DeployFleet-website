@@ -6,6 +6,7 @@ import { calculateFuelEfficiency, type FuelEfficiencyInputs } from "@/lib/calcul
 import { DIESEL_PRICE_ZMW_PER_LITRE, formatSourceLabel } from "@/lib/benchmarks";
 import { whatsappHref } from "@/lib/nav";
 import { NumberField, toNumber, formatZmw } from "@/components/intelligence-hub/NumberField";
+import { AiInsightPanel } from "@/components/intelligence-hub/AiInsightPanel";
 
 type FormState = {
   distanceKm: string;
@@ -65,6 +66,15 @@ export default function FuelEfficiencyCalculator() {
   const hasEnoughToShow =
     inputs.distanceKm > 0 && inputs.actualFuelUsedLitres > 0 && inputs.expectedConsumptionLPer100Km > 0;
   const flag = flagCopy[result.flag];
+
+  function buildAiPrompt(): string {
+    return `Fuel efficiency check for a ${inputs.distanceKm} km trip:
+- Actual fuel used: ${inputs.actualFuelUsedLitres} L (${result.actualConsumptionLPer100Km.toFixed(1)} L/100km)
+- Expected baseline: ${inputs.expectedConsumptionLPer100Km} L/100km (${result.expectedFuelLitres.toFixed(1)} L expected)
+- Variance: ${result.varianceLitres.toFixed(1)} L (${result.variancePercent.toFixed(1)}%)
+- Cost variance: ${formatZmw(result.costVarianceZmw)}
+- Flag: ${result.flag}`;
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
@@ -164,6 +174,8 @@ export default function FuelEfficiencyCalculator() {
                     </dd>
                   </div>
                 </dl>
+
+                <AiInsightPanel feature="fuel-efficiency" buildPrompt={buildAiPrompt} />
               </>
             ) : (
               <div className="py-6 text-center">
@@ -183,7 +195,7 @@ export default function FuelEfficiencyCalculator() {
             </p>
             <div className="mt-4 flex flex-col gap-2">
               <Link href="/demo" className="btn-primary justify-center text-sm">
-                Book a Demo
+                View Demo
               </Link>
               <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="btn-secondary justify-center text-sm">
                 Chat on WhatsApp

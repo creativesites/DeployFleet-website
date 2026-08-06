@@ -66,7 +66,7 @@ export default function PricingPage() {
 
       <div className="mt-14 flex flex-col gap-3 sm:flex-row">
         <Link href="/demo" className="btn-primary">
-          Book a Demo
+          View Demo
         </Link>
         <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="btn-secondary">
           Chat on WhatsApp

@@ -6,6 +6,8 @@ import { calculateCostPerKm, type CostPerKmInputs } from "@/lib/calculators/cost
 import { DIESEL_PRICE_ZMW_PER_LITRE, NAPSA, HEAVY_VEHICLE_TOLLS, formatSourceLabel } from "@/lib/benchmarks";
 import { whatsappHref } from "@/lib/nav";
 import { NumberField, toNumber, formatZmw } from "@/components/intelligence-hub/NumberField";
+import { AiInsightPanel } from "@/components/intelligence-hub/AiInsightPanel";
+import type { CostPerKmResult } from "@/lib/calculators/costPerKm";
 
 type FormState = {
   annualDistanceKm: string;
@@ -68,6 +70,17 @@ export default function CostPerKmCalculator() {
 
   const result = useMemo(() => calculateCostPerKm(inputs), [inputs]);
   const hasEnoughToShow = inputs.annualDistanceKm > 0 && inputs.fuelConsumptionLPer100Km > 0;
+
+  function buildAiPrompt(): string {
+    const r: CostPerKmResult = result;
+    return `Cost Per Kilometre calculation for a truck covering ${inputs.annualDistanceKm.toLocaleString()} km/year:
+- Fuel: ${formatZmw(r.fuelCostPerKmZmw)}/km (${inputs.fuelConsumptionLPer100Km} L/100km at K${inputs.fuelPriceZmwPerLitre}/L)
+- Fixed costs: ${formatZmw(r.fixedCostPerKmZmw)}/km
+- Tyres & maintenance: ${formatZmw(r.variableCostPerKmZmw)}/km
+- Driver wages: ${formatZmw(r.driverCostPerKmZmw)}/km
+- Tolls: ${formatZmw(r.tollCostPerKmZmw)}/km
+- Total: ${formatZmw(r.totalCostPerKmZmw)}/km, ${formatZmw(r.annualTotalCostZmw)}/year`;
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
@@ -199,6 +212,8 @@ export default function CostPerKmCalculator() {
                       </div>
                     ))}
                 </div>
+
+                <AiInsightPanel feature="cost-per-km" buildPrompt={buildAiPrompt} />
               </>
             ) : (
               <div className="py-6 text-center">
@@ -219,7 +234,7 @@ export default function CostPerKmCalculator() {
             </p>
             <div className="mt-4 flex flex-col gap-2">
               <Link href="/demo" className="btn-primary justify-center text-sm">
-                Book a Demo
+                View Demo
               </Link>
               <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="btn-secondary justify-center text-sm">
                 Chat on WhatsApp

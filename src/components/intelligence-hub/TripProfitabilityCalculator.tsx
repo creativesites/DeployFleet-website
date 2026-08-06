@@ -10,6 +10,7 @@ import {
 import { DIESEL_PRICE_ZMW_PER_LITRE, HEAVY_VEHICLE_TOLLS, formatSourceLabel } from "@/lib/benchmarks";
 import { whatsappHref } from "@/lib/nav";
 import { NumberField, toNumber, formatZmw } from "@/components/intelligence-hub/NumberField";
+import { AiInsightPanel } from "@/components/intelligence-hub/AiInsightPanel";
 
 type FormState = {
   distanceKm: string;
@@ -90,6 +91,19 @@ export default function TripProfitabilityCalculator() {
     inputs.fuelConsumptionLPer100Km > 0 &&
     (inputs.revenueMode === "perKm" ? inputs.ratePerKmZmw > 0 : inputs.lumpSumZmw > 0);
   const status = statusCopy[result.status];
+
+  function buildAiPrompt(): string {
+    const revenueDescription =
+      inputs.revenueMode === "perKm"
+        ? `${formatZmw(inputs.ratePerKmZmw)}/km rate`
+        : `${formatZmw(inputs.lumpSumZmw)} lump sum`;
+    return `Trip profitability for a ${inputs.distanceKm} km trip offered at ${revenueDescription}:
+- Revenue: ${formatZmw(result.totalRevenueZmw)}
+- Total cost: ${formatZmw(result.totalCostZmw)} (fuel ${formatZmw(result.fuelCostZmw)}, tyres/maintenance ${formatZmw(result.distanceCostZmw)}, driver allowance ${formatZmw(inputs.driverAllowanceZmw)}, tolls ${formatZmw(inputs.tollsZmw)}, border fees ${formatZmw(inputs.borderFeesZmw)})
+- Gross profit: ${formatZmw(result.grossProfitZmw)} (${result.profitMarginPercent.toFixed(1)}% margin)
+- Break-even rate: ${formatZmw(result.breakEvenRatePerKmZmw)}/km
+- Status: ${result.status}`;
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
@@ -270,6 +284,8 @@ export default function TripProfitabilityCalculator() {
                     <dd className="font-medium text-navy">{formatZmw(result.breakEvenRatePerKmZmw)}/km</dd>
                   </div>
                 </dl>
+
+                <AiInsightPanel feature="trip-profitability" buildPrompt={buildAiPrompt} />
               </>
             ) : (
               <div className="py-6 text-center">
@@ -289,7 +305,7 @@ export default function TripProfitabilityCalculator() {
             </p>
             <div className="mt-4 flex flex-col gap-2">
               <Link href="/demo" className="btn-primary justify-center text-sm">
-                Book a Demo
+                View Demo
               </Link>
               <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="btn-secondary justify-center text-sm">
                 Chat on WhatsApp

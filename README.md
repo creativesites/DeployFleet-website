@@ -136,8 +136,7 @@ Governing rule: every calculator is a deterministic **Layer 1** engine
 (`src/lib/calculators/*.ts` — pure functions, no network calls, unit
 tested) with an **optional Layer 2** AI enhancement on top, never the
 reverse. Layer 2 (DeepSeek → Gemini provider router, explanations,
-recommendations) is Phase B — not built yet; Phase A is engine-only by
-design.
+recommendations) is Phase B — now built, see below.
 
 **Locked decisions** (all six — calculator selection, $20/month AI spend
 ceiling, Firebase+Clerk as the Phase E/F accounts stack, the benchmark
@@ -170,10 +169,58 @@ judgement — real Layer 1 logic, same discipline as the raw numbers.
 input + `toNumber`/`formatZmw` helpers all three calculators use, factored
 out after Cost Per Kilometre to avoid three copies drifting apart.
 
-**Not yet built:** the other 7 calculators (Phase B onward — Driver Pay,
-Fleet TCO, Break-Even, Compliance Risk, Tyre CPK, Load Optimisation, ROI/
-Payback) and all of Layer 2 (the AI provider router, explanations,
-recommendations) — see the plan's roadmap §10 for the order.
+**Phase B (Layer 2 — AI enhancement infrastructure) is complete.** Every
+Phase A calculator now has an optional "Get AI Insight" panel below its
+results:
+- `src/lib/ai/providers/{deepseek,gemini}.ts` — one adapter per provider
+  behind a shared `AiProviderAdapter` interface
+  (`src/lib/ai/providers/types.ts`). Implemented to each provider's
+  documented API shape; **not yet verified against a live call** — no API
+  key is available in this dev environment.
+- `src/lib/ai/router.ts` — `completeWithFallback()` tries DeepSeek first,
+  falls back to Gemini, skips whichever provider has no key configured,
+  returns the first success (or the last failure if both fail/are
+  unconfigured). 6 tests, using fake injected adapters — no network
+  mocking needed.
+- `src/lib/ai/rateLimit.ts` — a 24h-window, 20-requests-per-key in-memory
+  limiter. **Honest limitation, not oversold**: this is a single-instance
+  in-memory `Map`, which does not reliably persist across Vercel
+  serverless cold starts, so it reduces accidental hammering but is *not*
+  a real distributed rate limit. The actual $20/month spend ceiling
+  (locked decision, plan §11) should be enforced on the DeepSeek/Gemini
+  billing dashboard directly, not assumed to come from this code. 5 tests.
+- `src/lib/ai/cache.ts` — a 6h in-memory response cache keyed by
+  `feature:prompt`; never caches a failure. 5 tests.
+- `src/lib/ai/prompts.ts` — the shared system prompt (2–4 sentences, no
+  markdown, never invents data not present in the user's own prompt).
+- `src/app/api/ai/complete/route.ts` — the one Route Handler every panel
+  calls: `AI_FEATURES_ENABLED` kill switch → request validation → rate
+  limit → cache lookup → `completeWithFallback()` → cache + return.
+  Always responds `200` with `{ok:false, provider, reason}` on any
+  failure (misconfigured/rate-limited/all-providers-failed) rather than a
+  5xx — the client never has to special-case a network error separately
+  from "no insight available right now." `400` only for a malformed
+  request body.
+- `src/components/intelligence-hub/AiInsightPanel.tsx` — the shared panel
+  wired into all three calculators. Manual "Get AI Insight" button, never
+  auto-fires on load or on input change. Violet-accented per the
+  AI-content convention (`--df-ai-violet`, reserved and never decorative).
+  Degrades on any failure to "AI insights are temporarily unavailable.
+  Your calculation above is correct either way." — the calculator's own
+  Layer 1 result is never blocked, hidden, or cast into doubt by an AI
+  failure.
+
+**41 tests total** (`npm run test`): 25 Phase A engine tests + 6 router +
+5 rateLimit + 5 cache.
+
+See `.env.example` for the environment variables Phase B reads (all
+optional — every calculator's core result works with none of them set).
+
+**Not yet built:** the other 7 calculators (Driver Pay & Advance, Fleet
+TCO, Break-Even Utilisation, Compliance Risk, Tyre CPK, Load Optimisation,
+ROI/Payback) — see the plan's roadmap §10 for the order; Driver Pay &
+Advance, Fleet TCO, and Break-Even Utilisation are next, still
+engine-only per the roadmap.
 
 **Benchmark data** (`src/lib/benchmarks.ts`) — every value is sourced and
 dated, per the data-integrity rule in the plan §06:
@@ -222,5 +269,16 @@ on — the same applies here.
 
 ## Deployment
 
-Deploys to Vercel. No environment variables are required for the current
-build (no backend/API keys wired in yet).
+Deploys to Vercel. All environment variables are optional — see
+`.env.example`. Without any set, the site builds and runs identically
+except the Intelligence Hub's "Get AI Insight" panels show the graceful
+"temporarily unavailable" state instead of a real completion.
+
+To enable AI Insights in a given environment, set in Vercel's Project
+Settings → Environment Variables:
+- `DEEPSEEK_API_KEY` and/or `GEMINI_API_KEY` — at least one, to actually
+  get completions (the router tries DeepSeek first, then Gemini).
+- `DEEPSEEK_MODEL` / `GEMINI_MODEL` — optional, override the default model
+  per provider.
+- `AI_FEATURES_ENABLED=false` — optional kill switch to disable the
+  feature entirely without removing the keys (e.g. to pause spend).
