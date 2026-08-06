@@ -1,7 +1,8 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
-import { DEFAULT_COUNTRY_CODE, getCountry, type CountryCode } from "@/lib/countries";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { DEFAULT_COUNTRY_CODE, getCountry, type CountryCode, type CountryConfig } from "@/lib/countries";
+import type { DieselPriceOverride } from "@/app/api/diesel-price/route";
 
 const STORAGE_KEY = "deployfleet-intelligence-hub-country";
 /** localStorage's native "storage" event only fires in *other* tabs — this custom event covers same-tab writes so useSyncExternalStore re-renders immediately after selectCountry(). */
@@ -38,11 +39,49 @@ function getServerSnapshot(): CountryCode {
  */
 export function useSelectedCountry() {
   const countryCode = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const [dieselOverrides, setDieselOverrides] = useState<Partial<Record<CountryCode, DieselPriceOverride>>>({});
+
+  // Admin-set diesel prices (see /admin) load once per page visit and
+  // merge over the static sourced default — this is the one figure
+  // volatile enough to need updating without a code deploy. Every other
+  // country field (tax bands, tolls) still comes from the static,
+  // PR-reviewed src/lib/countries.ts, unchanged.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/diesel-price")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data.ok) setDieselOverrides(data.overrides);
+      })
+      .catch(() => {
+        // No override fetched — the static sourced default still applies, same graceful-degradation contract as the AI Insight panel.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function selectCountry(code: CountryCode) {
     window.localStorage.setItem(STORAGE_KEY, code);
     window.dispatchEvent(new Event(CHANGE_EVENT));
   }
 
-  return { country: getCountry(countryCode), countryCode, selectCountry };
+  const baseCountry = getCountry(countryCode);
+  const override = dieselOverrides[countryCode];
+  const country: CountryConfig =
+    override && baseCountry.dieselPricePerLitre
+      ? {
+          ...baseCountry,
+          dieselPricePerLitre: {
+            ...baseCountry.dieselPricePerLitre,
+            value: override.value,
+            asOf: override.asOf,
+            source: "DeployFleet admin dashboard",
+            confidence: "high",
+            note: "Manually updated via /admin, overriding the static sourced default below.",
+          },
+        }
+      : baseCountry;
+
+  return { country, countryCode, selectCountry };
 }
