@@ -21,21 +21,17 @@ function useLoopCap(ref: RefObject<HTMLVideoElement | null>) {
 }
 
 export default function Hero() {
-  const desktopVideoRef = useRef<HTMLVideoElement>(null);
-  const mobileVideoRef = useRef<HTMLVideoElement>(null);
-  useLoopCap(desktopVideoRef);
-  useLoopCap(mobileVideoRef);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  useLoopCap(videoRef);
 
   return (
     <section
       className="relative overflow-hidden"
-      style={{ background: "var(--df-hero-bg)" }}
+      style={{
+        background:
+          "radial-gradient(ellipse 1200px 800px at 50% 64%, var(--df-hero-glow-inner) 0%, var(--df-hero-glow-outer) 42%, transparent 72%), var(--df-hero-bg)",
+      }}
     >
-      <div
-        className="pointer-events-none absolute -top-40 left-1/2 h-[620px] w-[900px] -translate-x-1/2 rounded-full opacity-25 blur-3xl"
-        style={{ background: "var(--df-gradient-brand-wide)" }}
-        aria-hidden="true"
-      />
       <div
         className="pointer-events-none absolute inset-x-0 bottom-0 h-40"
         style={{ background: "linear-gradient(to bottom, transparent, var(--df-hero-bg))" }}
@@ -74,41 +70,11 @@ export default function Hero() {
           </div>
         </div>
 
-        {/* Mobile: portrait hero video (below sm) */}
-        <div className="relative mx-auto mt-16 max-w-xs sm:hidden">
+        {/* Hero video mockup — one landscape video, all breakpoints */}
+        <div className="relative mx-auto mt-16 max-w-6xl">
           <div
-            className="pointer-events-none absolute -inset-4 rounded-df-xl opacity-40 blur-2xl"
-            style={{ background: "var(--df-gradient-brand)" }}
-            aria-hidden="true"
-          />
-          <div
-            className="relative overflow-hidden rounded-df-xl ring-1 ring-white/10"
-            style={{
-              aspectRatio: "720 / 1280",
-              boxShadow: "0 40px 100px -20px rgba(0,0,0,0.6)",
-              background: "var(--df-hero-bg)",
-            }}
-          >
-            <video
-              ref={mobileVideoRef}
-              className="h-full w-full object-cover"
-              src="/brand/hero-video-mobile.mp4"
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="metadata"
-            >
-              <track kind="captions" />
-            </video>
-          </div>
-        </div>
-
-        {/* Tablet/desktop: landscape hero video (sm and up) */}
-        <div className="relative mx-auto mt-16 hidden max-w-6xl sm:block">
-          <div
-            className="pointer-events-none absolute -inset-6 rounded-df-xl opacity-40 blur-2xl"
-            style={{ background: "var(--df-gradient-brand)" }}
+            className="pointer-events-none absolute -inset-4 rounded-df-xl opacity-50 blur-2xl sm:-inset-6"
+            style={{ background: "linear-gradient(135deg, var(--df-hero-glow-inner), var(--df-hero-glow-outer))" }}
             aria-hidden="true"
           />
           <div
@@ -116,7 +82,7 @@ export default function Hero() {
             style={{ aspectRatio: "1280 / 720", boxShadow: "0 40px 100px -20px rgba(0,0,0,0.6)" }}
           >
             <video
-              ref={desktopVideoRef}
+              ref={videoRef}
               className="h-full w-full object-cover"
               src="/brand/hero-video.mp4"
               poster="/brand/hero-promo.png"

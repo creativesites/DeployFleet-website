@@ -12,7 +12,12 @@
   --df-navy-2: #0f1b3d;
   /* Matches the dark-background logo lockup — used for the hero band only,
      not a general dark-mode token (this site is light-canvas otherwise). */
-  --df-hero-bg: #060a16;
+  --df-hero-bg: #0b0e14;
+  /* Hero's center radial glow, positioned behind the video mockup —
+     dark slate/indigo, not brand color, so it reads as depth/ambience
+     rather than a colorful spotlight. */
+  --df-hero-glow-inner: #1c2333;
+  --df-hero-glow-outer: #161b26;
   --df-cyan: #00d2ff;
   --df-teal: #0b93d3;
   --df-canvas: #f8fafc;

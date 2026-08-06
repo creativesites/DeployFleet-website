@@ -75,28 +75,37 @@ screen captures of the running app — worth knowing since they're a step
 more polished/idealized than what today's live demo actually looks like.
 Real captures can replace them 1:1 later with no layout changes needed.
 They now cover most of the site: `public/screenshots/` holds
-`mission-control.png`, `dispatch-board.png`, `dispatch-assign.png`,
-`fleet-command-center-list.png`, `vehicle-360.png`, `maintenance-center.png`,
-`compliance-center.png`, `financial-intelligence.png`, and `launcher.jpg`,
-wired into the homepage sections and product pages via the `Screenshot`
-component. `financial-intelligence.png` is currently reused on the Billing
-page as an approximate fit (it's Financial Intelligence, not literally the
-Invoice Ledger the label used to describe) — swap for a dedicated shot when
-one exists. **Still a labeled placeholder** (`ScreenshotPlaceholder`,
-label text doubles as the shot needed):
-- Homepage AI Copilot section — needs a Copilot Rail chat screenshot.
-- `/product/ai-copilot` — needs a Copilot Console screenshot.
+`mission-control.png`, `mission-control-mobile.mp4`, `dispatch-board.png`,
+`dispatch-assign.png`, `fleet-command-center-list.png`, `vehicle-360.png`,
+`maintenance-center.png`, `compliance-center.png`,
+`financial-intelligence.png`, and `launcher.jpg`, wired into the homepage
+sections and product pages via the `Screenshot` component. `financial-
+intelligence.png` is currently reused on the Billing page as an
+approximate fit (it's Financial Intelligence, not literally the Invoice
+Ledger the label used to describe) — swap for a dedicated shot when one
+exists. **Still a labeled placeholder** (`ScreenshotPlaceholder`, label
+text doubles as the shot needed):
+- Homepage AI Copilot section — needs a Copilot Rail chat screenshot
+  (with a tool-lookup line visible) — waiting on the Copilot Rail's
+  current round of updates to finish before the real shot is taken.
+- `/product/ai-copilot` — needs a Copilot Console screenshot — same
+  wait.
 
-The Hero renders two different videos, not one scaled to fit: a landscape
-`hero-video.mp4` (1280×720) above the `sm` breakpoint, and a true portrait
-`hero-video-mobile.mp4` (720×1280) below it — swapped via Tailwind's
-`hidden`/`sm:hidden` rather than stretching one video to both shapes. Both
-are capped to loop at 8 seconds via a small `timeupdate` listener
-(`LOOP_SECONDS` in `Hero.tsx`) since the native `loop` attribute only
-replays a clip's full length. The mobile video has no poster frame yet
-(no still image extracted from it) — its container's background is set to
-`--df-hero-bg` so there's no flash of pure black before it loads; a real
-poster crop would be a nice follow-up.
+The Hero renders a single landscape `hero-video.mp4` (1280×720) at every
+breakpoint (`object-cover` inside a responsive `max-w-6xl` frame, not a
+separate portrait clip) — capped to loop at 8 seconds via a small
+`timeupdate` listener (`LOOP_SECONDS` in `Hero.tsx`) since the native
+`loop` attribute only replays a clip's full length. `mission-control-
+mobile.mp4` (720×1280, true portrait) is a genuinely different asset — the
+real Mission Control screen recorded on a phone — and lives in
+`SolutionSection` instead: on mobile it replaces `mission-control.png`
+with this video (loops natively, no 8s cap — that cap is specific to the
+Hero's own pacing), while `sm` and up still show the static screenshot.
+This was a fix, not a new feature: the video had originally been wired
+into the Hero by mistake (see `git log -- public/screenshots/mission-
+control-mobile.mp4` for the rename) — its own content is Mission Control,
+not a hero shot, and it's now used in the section that's actually about
+Mission Control.
 
 - **WhatsApp number** — `WHATSAPP_NUMBER` in `src/lib/nav.ts` is set to
   `260979046745`, sourced from the number printed on the hero promo

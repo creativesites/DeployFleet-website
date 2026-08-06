@@ -24,13 +24,31 @@ export default function SolutionSection() {
             </p>
           </div>
 
-          <div className="card-surface p-2 sm:p-3">
-            <Screenshot
-              src="/screenshots/mission-control.png"
-              alt="DeployFleet Mission Control dashboard — attention strip and KPI cards"
-              width={1312}
-              height={816}
-            />
+          <div className="card-surface overflow-hidden p-2 sm:p-3">
+            {/* Mobile: the real Mission Control mobile video */}
+            <div className="overflow-hidden rounded-df-lg sm:hidden" style={{ aspectRatio: "720 / 1280" }}>
+              <video
+                className="h-full w-full object-cover"
+                src="/screenshots/mission-control-mobile.mp4"
+                poster="/screenshots/mission-control-mobile-poster.jpg"
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="metadata"
+              >
+                <track kind="captions" />
+              </video>
+            </div>
+            {/* Tablet/desktop: static screenshot */}
+            <div className="hidden sm:block">
+              <Screenshot
+                src="/screenshots/mission-control.png"
+                alt="DeployFleet Mission Control dashboard — attention strip and KPI cards"
+                width={1312}
+                height={816}
+              />
+            </div>
           </div>
         </div>
       </div>
