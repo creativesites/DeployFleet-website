@@ -2,102 +2,98 @@
  * Cost Per Kilometre — Layer 1 deterministic engine.
  *
  * Pure function: same inputs always produce the same outputs, no network
- * calls, no dependency on AI. This is the source of truth the calculator
- * page renders — see the Intelligence Hub plan §01/§03.
+ * calls, no dependency on AI. Country-agnostic — every amount is in
+ * whatever currency the caller's inputs are denominated in; see
+ * `src/lib/countries.ts` for the per-country data (diesel price, tolls,
+ * social security rate) a calling component supplies.
  */
 
-export interface FixedCostsMonthlyZmw {
+export interface FixedCostsMonthly {
   insurance: number;
-  napsa: number;
+  socialSecurity: number;
   licensing: number;
   financing: number;
   yardRent: number;
 }
 
-export interface VariableCostsPerKmZmw {
+export interface VariableCostsPerKm {
   tyres: number;
   maintenanceReserve: number;
 }
 
 export interface CostPerKmInputs {
   annualDistanceKm: number;
-  fuelPriceZmwPerLitre: number;
+  fuelPricePerLitre: number;
   fuelConsumptionLPer100Km: number;
-  fixedCostsMonthlyZmw: FixedCostsMonthlyZmw;
-  variableCostsPerKmZmw: VariableCostsPerKmZmw;
-  driverWagesMonthlyZmw: number;
-  tollsMonthlyZmw: number;
+  fixedCostsMonthly: FixedCostsMonthly;
+  variableCostsPerKm: VariableCostsPerKm;
+  driverWagesMonthly: number;
+  tollsMonthly: number;
 }
 
 export interface CostBreakdownItem {
   label: string;
-  perKmZmw: number;
+  perKm: number;
   /** 0–1 share of total cost per km. */
   share: number;
 }
 
 export interface CostPerKmResult {
-  fuelCostPerKmZmw: number;
-  fixedCostPerKmZmw: number;
-  variableCostPerKmZmw: number;
-  driverCostPerKmZmw: number;
-  tollCostPerKmZmw: number;
-  totalCostPerKmZmw: number;
+  fuelCostPerKm: number;
+  fixedCostPerKm: number;
+  variableCostPerKm: number;
+  driverCostPerKm: number;
+  tollCostPerKm: number;
+  totalCostPerKm: number;
   monthlyDistanceKm: number;
-  annualTotalCostZmw: number;
+  annualTotalCost: number;
   breakdown: CostBreakdownItem[];
 }
 
-function sumFixedCosts(costs: FixedCostsMonthlyZmw): number {
-  return costs.insurance + costs.napsa + costs.licensing + costs.financing + costs.yardRent;
+function sumFixedCosts(costs: FixedCostsMonthly): number {
+  return costs.insurance + costs.socialSecurity + costs.licensing + costs.financing + costs.yardRent;
 }
 
 export function calculateCostPerKm(inputs: CostPerKmInputs): CostPerKmResult {
   const monthlyDistanceKm = inputs.annualDistanceKm / 12;
   const hasDistance = monthlyDistanceKm > 0;
 
-  const fuelCostPerKmZmw = (inputs.fuelConsumptionLPer100Km / 100) * inputs.fuelPriceZmwPerLitre;
+  const fuelCostPerKm = (inputs.fuelConsumptionLPer100Km / 100) * inputs.fuelPricePerLitre;
 
-  const fixedCostsMonthlyTotal = sumFixedCosts(inputs.fixedCostsMonthlyZmw);
-  const fixedCostPerKmZmw = hasDistance ? fixedCostsMonthlyTotal / monthlyDistanceKm : 0;
+  const fixedCostsMonthlyTotal = sumFixedCosts(inputs.fixedCostsMonthly);
+  const fixedCostPerKm = hasDistance ? fixedCostsMonthlyTotal / monthlyDistanceKm : 0;
 
-  const variableCostPerKmZmw =
-    inputs.variableCostsPerKmZmw.tyres + inputs.variableCostsPerKmZmw.maintenanceReserve;
+  const variableCostPerKm = inputs.variableCostsPerKm.tyres + inputs.variableCostsPerKm.maintenanceReserve;
 
-  const driverCostPerKmZmw = hasDistance ? inputs.driverWagesMonthlyZmw / monthlyDistanceKm : 0;
+  const driverCostPerKm = hasDistance ? inputs.driverWagesMonthly / monthlyDistanceKm : 0;
 
-  const tollCostPerKmZmw = hasDistance ? inputs.tollsMonthlyZmw / monthlyDistanceKm : 0;
+  const tollCostPerKm = hasDistance ? inputs.tollsMonthly / monthlyDistanceKm : 0;
 
-  const totalCostPerKmZmw =
-    fuelCostPerKmZmw +
-    fixedCostPerKmZmw +
-    variableCostPerKmZmw +
-    driverCostPerKmZmw +
-    tollCostPerKmZmw;
+  const totalCostPerKm = fuelCostPerKm + fixedCostPerKm + variableCostPerKm + driverCostPerKm + tollCostPerKm;
 
   const rawBreakdown: [string, number][] = [
-    ["Fuel", fuelCostPerKmZmw],
-    ["Fixed costs", fixedCostPerKmZmw],
-    ["Tyres & maintenance", variableCostPerKmZmw],
-    ["Driver wages", driverCostPerKmZmw],
-    ["Tolls", tollCostPerKmZmw],
+    ["Fuel", fuelCostPerKm],
+    ["Fixed costs", fixedCostPerKm],
+    ["Tyres & maintenance", variableCostPerKm],
+    ["Driver wages", driverCostPerKm],
+    ["Tolls", tollCostPerKm],
   ];
 
-  const breakdown: CostBreakdownItem[] = rawBreakdown.map(([label, perKmZmw]) => ({
+  const breakdown: CostBreakdownItem[] = rawBreakdown.map(([label, perKm]) => ({
     label,
-    perKmZmw,
-    share: totalCostPerKmZmw > 0 ? perKmZmw / totalCostPerKmZmw : 0,
+    perKm,
+    share: totalCostPerKm > 0 ? perKm / totalCostPerKm : 0,
   }));
 
   return {
-    fuelCostPerKmZmw,
-    fixedCostPerKmZmw,
-    variableCostPerKmZmw,
-    driverCostPerKmZmw,
-    tollCostPerKmZmw,
-    totalCostPerKmZmw,
+    fuelCostPerKm,
+    fixedCostPerKm,
+    variableCostPerKm,
+    driverCostPerKm,
+    tollCostPerKm,
+    totalCostPerKm,
     monthlyDistanceKm,
-    annualTotalCostZmw: totalCostPerKmZmw * inputs.annualDistanceKm,
+    annualTotalCost: totalCostPerKm * inputs.annualDistanceKm,
     breakdown,
   };
 }

@@ -3,8 +3,9 @@
  *
  * Answers one question for a single trip: after every real cost, does
  * this load make money, and at what rate does it stop being worth
- * taking? Pure function, no network calls, no AI — see costPerKm.ts for
- * the same discipline applied to a fleet-wide figure instead of one trip.
+ * taking? Pure function, no network calls, no AI, country-agnostic — see
+ * costPerKm.ts for the same discipline applied to a fleet-wide figure
+ * instead of one trip.
  */
 
 export type RevenueMode = "perKm" | "lumpSum";
@@ -12,35 +13,35 @@ export type RevenueMode = "perKm" | "lumpSum";
 export interface TripProfitabilityInputs {
   distanceKm: number;
   revenueMode: RevenueMode;
-  ratePerKmZmw: number;
-  lumpSumZmw: number;
-  fuelPriceZmwPerLitre: number;
+  ratePerKm: number;
+  lumpSum: number;
+  fuelPricePerLitre: number;
   fuelConsumptionLPer100Km: number;
-  driverAllowanceZmw: number;
-  tollsZmw: number;
-  borderFeesZmw: number;
-  tyresPerKmZmw: number;
-  maintenanceReservePerKmZmw: number;
-  otherCostsZmw: number;
+  driverAllowance: number;
+  tolls: number;
+  borderFees: number;
+  tyresPerKm: number;
+  maintenanceReservePerKm: number;
+  otherCosts: number;
 }
 
 export type ProfitabilityStatus = "healthy" | "thin-margin" | "loss";
 
 export interface CostBreakdownItem {
   label: string;
-  amountZmw: number;
+  amount: number;
   share: number;
 }
 
 export interface TripProfitabilityResult {
-  totalRevenueZmw: number;
-  fuelCostZmw: number;
-  distanceCostZmw: number;
-  totalCostZmw: number;
-  grossProfitZmw: number;
+  totalRevenue: number;
+  fuelCost: number;
+  distanceCost: number;
+  totalCost: number;
+  grossProfit: number;
   profitMarginPercent: number;
-  profitPerKmZmw: number;
-  breakEvenRatePerKmZmw: number;
+  profitPerKm: number;
+  breakEvenRatePerKm: number;
   status: ProfitabilityStatus;
   breakdown: CostBreakdownItem[];
 }
@@ -54,49 +55,42 @@ function statusFor(marginPercent: number): ProfitabilityStatus {
 }
 
 export function calculateTripProfitability(inputs: TripProfitabilityInputs): TripProfitabilityResult {
-  const totalRevenueZmw =
-    inputs.revenueMode === "perKm" ? inputs.ratePerKmZmw * inputs.distanceKm : inputs.lumpSumZmw;
+  const totalRevenue = inputs.revenueMode === "perKm" ? inputs.ratePerKm * inputs.distanceKm : inputs.lumpSum;
 
-  const fuelCostZmw = (inputs.fuelConsumptionLPer100Km / 100) * inputs.distanceKm * inputs.fuelPriceZmwPerLitre;
-  const distanceCostZmw = (inputs.tyresPerKmZmw + inputs.maintenanceReservePerKmZmw) * inputs.distanceKm;
+  const fuelCost = (inputs.fuelConsumptionLPer100Km / 100) * inputs.distanceKm * inputs.fuelPricePerLitre;
+  const distanceCost = (inputs.tyresPerKm + inputs.maintenanceReservePerKm) * inputs.distanceKm;
 
-  const totalCostZmw =
-    fuelCostZmw +
-    distanceCostZmw +
-    inputs.driverAllowanceZmw +
-    inputs.tollsZmw +
-    inputs.borderFeesZmw +
-    inputs.otherCostsZmw;
+  const totalCost = fuelCost + distanceCost + inputs.driverAllowance + inputs.tolls + inputs.borderFees + inputs.otherCosts;
 
-  const grossProfitZmw = totalRevenueZmw - totalCostZmw;
-  const profitMarginPercent = totalRevenueZmw > 0 ? (grossProfitZmw / totalRevenueZmw) * 100 : 0;
-  const profitPerKmZmw = inputs.distanceKm > 0 ? grossProfitZmw / inputs.distanceKm : 0;
-  const breakEvenRatePerKmZmw = inputs.distanceKm > 0 ? totalCostZmw / inputs.distanceKm : 0;
+  const grossProfit = totalRevenue - totalCost;
+  const profitMarginPercent = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+  const profitPerKm = inputs.distanceKm > 0 ? grossProfit / inputs.distanceKm : 0;
+  const breakEvenRatePerKm = inputs.distanceKm > 0 ? totalCost / inputs.distanceKm : 0;
 
   const rawBreakdown: [string, number][] = [
-    ["Fuel", fuelCostZmw],
-    ["Tyres & maintenance", distanceCostZmw],
-    ["Driver allowance", inputs.driverAllowanceZmw],
-    ["Tolls", inputs.tollsZmw],
-    ["Border fees", inputs.borderFeesZmw],
-    ["Other", inputs.otherCostsZmw],
+    ["Fuel", fuelCost],
+    ["Tyres & maintenance", distanceCost],
+    ["Driver allowance", inputs.driverAllowance],
+    ["Tolls", inputs.tolls],
+    ["Border fees", inputs.borderFees],
+    ["Other", inputs.otherCosts],
   ];
 
-  const breakdown: CostBreakdownItem[] = rawBreakdown.map(([label, amountZmw]) => ({
+  const breakdown: CostBreakdownItem[] = rawBreakdown.map(([label, amount]) => ({
     label,
-    amountZmw,
-    share: totalCostZmw > 0 ? amountZmw / totalCostZmw : 0,
+    amount,
+    share: totalCost > 0 ? amount / totalCost : 0,
   }));
 
   return {
-    totalRevenueZmw,
-    fuelCostZmw,
-    distanceCostZmw,
-    totalCostZmw,
-    grossProfitZmw,
+    totalRevenue,
+    fuelCost,
+    distanceCost,
+    totalCost,
+    grossProfit,
     profitMarginPercent,
-    profitPerKmZmw,
-    breakEvenRatePerKmZmw,
+    profitPerKm,
+    breakEvenRatePerKm,
     status: statusFor(profitMarginPercent),
     breakdown,
   };

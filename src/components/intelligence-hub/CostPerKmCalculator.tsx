@@ -2,70 +2,78 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { calculateCostPerKm, type CostPerKmInputs } from "@/lib/calculators/costPerKm";
-import { DIESEL_PRICE_ZMW_PER_LITRE, NAPSA, HEAVY_VEHICLE_TOLLS, formatSourceLabel } from "@/lib/benchmarks";
+import { calculateCostPerKm, type CostPerKmInputs, type CostPerKmResult } from "@/lib/calculators/costPerKm";
+import { formatMoney } from "@/lib/countries";
 import { whatsappHref } from "@/lib/nav";
-import { NumberField, toNumber, formatZmw } from "@/components/intelligence-hub/NumberField";
+import { NumberField, toNumber } from "@/components/intelligence-hub/NumberField";
 import { AiInsightPanel } from "@/components/intelligence-hub/AiInsightPanel";
-import type { CostPerKmResult } from "@/lib/calculators/costPerKm";
+import { CountrySelector } from "@/components/intelligence-hub/CountrySelector";
+import { useSelectedCountry } from "@/components/intelligence-hub/useSelectedCountry";
 
 type FormState = {
   annualDistanceKm: string;
-  fuelPriceZmwPerLitre: string;
+  fuelPricePerLitre: string;
   fuelConsumptionLPer100Km: string;
   insurance: string;
-  napsa: string;
+  socialSecurity: string;
   licensing: string;
   financing: string;
   yardRent: string;
   tyres: string;
   maintenanceReserve: string;
-  driverWagesMonthlyZmw: string;
-  tollsMonthlyZmw: string;
+  driverWagesMonthly: string;
+  tollsMonthly: string;
 };
 
-const initialState: FormState = {
+const emptyState: FormState = {
   annualDistanceKm: "120000",
-  fuelPriceZmwPerLitre: DIESEL_PRICE_ZMW_PER_LITRE.value.toString(),
+  fuelPricePerLitre: "",
   fuelConsumptionLPer100Km: "",
   insurance: "",
-  napsa: "",
+  socialSecurity: "",
   licensing: "",
   financing: "",
   yardRent: "",
   tyres: "",
   maintenanceReserve: "",
-  driverWagesMonthlyZmw: "",
-  tollsMonthlyZmw: "",
+  driverWagesMonthly: "",
+  tollsMonthly: "",
 };
 
 export default function CostPerKmCalculator() {
-  const [form, setForm] = useState<FormState>(initialState);
+  const [form, setForm] = useState<FormState>(emptyState);
+  const [touchedFuelPrice, setTouchedFuelPrice] = useState(false);
+  const { country, countryCode, selectCountry } = useSelectedCountry();
+  const money = (v: number) => formatMoney(v, country);
+
+  const fuelPriceValue =
+    !touchedFuelPrice && country.dieselPricePerLitre ? country.dieselPricePerLitre.value.toString() : form.fuelPricePerLitre;
 
   function set<K extends keyof FormState>(key: K, value: string) {
+    if (key === "fuelPricePerLitre") setTouchedFuelPrice(true);
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
   const inputs: CostPerKmInputs = useMemo(
     () => ({
       annualDistanceKm: toNumber(form.annualDistanceKm),
-      fuelPriceZmwPerLitre: toNumber(form.fuelPriceZmwPerLitre),
+      fuelPricePerLitre: toNumber(fuelPriceValue),
       fuelConsumptionLPer100Km: toNumber(form.fuelConsumptionLPer100Km),
-      fixedCostsMonthlyZmw: {
+      fixedCostsMonthly: {
         insurance: toNumber(form.insurance),
-        napsa: toNumber(form.napsa),
+        socialSecurity: toNumber(form.socialSecurity),
         licensing: toNumber(form.licensing),
         financing: toNumber(form.financing),
         yardRent: toNumber(form.yardRent),
       },
-      variableCostsPerKmZmw: {
+      variableCostsPerKm: {
         tyres: toNumber(form.tyres),
         maintenanceReserve: toNumber(form.maintenanceReserve),
       },
-      driverWagesMonthlyZmw: toNumber(form.driverWagesMonthlyZmw),
-      tollsMonthlyZmw: toNumber(form.tollsMonthlyZmw),
+      driverWagesMonthly: toNumber(form.driverWagesMonthly),
+      tollsMonthly: toNumber(form.tollsMonthly),
     }),
-    [form]
+    [form, fuelPriceValue]
   );
 
   const result = useMemo(() => calculateCostPerKm(inputs), [inputs]);
@@ -73,13 +81,13 @@ export default function CostPerKmCalculator() {
 
   function buildAiPrompt(): string {
     const r: CostPerKmResult = result;
-    return `Cost Per Kilometre calculation for a truck covering ${inputs.annualDistanceKm.toLocaleString()} km/year:
-- Fuel: ${formatZmw(r.fuelCostPerKmZmw)}/km (${inputs.fuelConsumptionLPer100Km} L/100km at K${inputs.fuelPriceZmwPerLitre}/L)
-- Fixed costs: ${formatZmw(r.fixedCostPerKmZmw)}/km
-- Tyres & maintenance: ${formatZmw(r.variableCostPerKmZmw)}/km
-- Driver wages: ${formatZmw(r.driverCostPerKmZmw)}/km
-- Tolls: ${formatZmw(r.tollCostPerKmZmw)}/km
-- Total: ${formatZmw(r.totalCostPerKmZmw)}/km, ${formatZmw(r.annualTotalCostZmw)}/year`;
+    return `Cost Per Kilometre calculation for a truck covering ${inputs.annualDistanceKm.toLocaleString()} km/year (${country.name}, ${country.currencyCode}):
+- Fuel: ${money(r.fuelCostPerKm)}/km (${inputs.fuelConsumptionLPer100Km} L/100km at ${money(inputs.fuelPricePerLitre)}/L)
+- Fixed costs: ${money(r.fixedCostPerKm)}/km
+- Tyres & maintenance: ${money(r.variableCostPerKm)}/km
+- Driver wages: ${money(r.driverCostPerKm)}/km
+- Tolls: ${money(r.tollCostPerKm)}/km
+- Total: ${money(r.totalCostPerKm)}/km, ${money(r.annualTotalCost)}/year`;
   }
 
   return (
@@ -100,6 +108,13 @@ export default function CostPerKmCalculator() {
       <div className="mt-12 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_420px]">
         <div className="space-y-8">
           <fieldset className="card-surface p-6">
+            <legend className="px-1 text-sm font-semibold text-navy">Country</legend>
+            <div className="mt-4">
+              <CountrySelector countryCode={countryCode} onChange={selectCountry} />
+            </div>
+          </fieldset>
+
+          <fieldset className="card-surface p-6">
             <legend className="px-1 text-sm font-semibold text-navy">Distance &amp; fuel</legend>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <NumberField
@@ -118,11 +133,15 @@ export default function CostPerKmCalculator() {
                 hint="From your own fuel logs — this varies by vehicle, load, and route, so there's no single correct default."
               />
               <NumberField
-                id="fuelPriceZmwPerLitre"
-                label="Diesel price (ZMW/litre)"
-                value={form.fuelPriceZmwPerLitre}
-                onChange={(v) => set("fuelPriceZmwPerLitre", v)}
-                hint={`Pre-filled from ${formatSourceLabel(DIESEL_PRICE_ZMW_PER_LITRE)}. ${DIESEL_PRICE_ZMW_PER_LITRE.note ?? ""}`}
+                id="fuelPricePerLitre"
+                label={`Diesel price (${country.currencyCode}/litre)`}
+                value={fuelPriceValue}
+                onChange={(v) => set("fuelPricePerLitre", v)}
+                hint={
+                  country.dieselPricePerLitre
+                    ? `Pre-filled from Source: ${country.dieselPricePerLitre.source}. ${country.dieselPricePerLitre.note ?? ""}`
+                    : `Not sourced yet for ${country.name} — enter your own.`
+                }
               />
             </div>
           </fieldset>
@@ -132,12 +151,16 @@ export default function CostPerKmCalculator() {
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <NumberField id="insurance" label="Insurance" value={form.insurance} onChange={(v) => set("insurance", v)} placeholder="0" />
               <NumberField
-                id="napsa"
-                label="NAPSA (employer share)"
-                value={form.napsa}
-                onChange={(v) => set("napsa", v)}
+                id="socialSecurity"
+                label={country.socialSecurity ? `${country.socialSecurity.value.label} (employer share)` : "Social security (employer share)"}
+                value={form.socialSecurity}
+                onChange={(v) => set("socialSecurity", v)}
                 placeholder="0"
-                hint={`${(NAPSA.value.employerRate * 100).toFixed(0)}% of the driver's gross salary, capped at ${formatZmw(NAPSA.value.employerCapZmw)}/month. ${formatSourceLabel(NAPSA)}.`}
+                hint={
+                  country.socialSecurity
+                    ? `${(country.socialSecurity.value.employerRate * 100).toFixed(1)}% of the driver's gross salary, capped at ${money(country.socialSecurity.value.employeeCapPerMonth)}/month. Source: ${country.socialSecurity.source}.`
+                    : `Not sourced yet for ${country.name} — enter your own.`
+                }
               />
               <NumberField id="licensing" label="Licensing & fitness" value={form.licensing} onChange={(v) => set("licensing", v)} placeholder="0" />
               <NumberField id="financing" label="Loan / lease repayment" value={form.financing} onChange={(v) => set("financing", v)} placeholder="0" />
@@ -148,10 +171,10 @@ export default function CostPerKmCalculator() {
           <fieldset className="card-surface p-6">
             <legend className="px-1 text-sm font-semibold text-navy">Variable costs (per km)</legend>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <NumberField id="tyres" label="Tyres (ZMW/km)" value={form.tyres} onChange={(v) => set("tyres", v)} placeholder="0" />
+              <NumberField id="tyres" label={`Tyres (${country.currencyCode}/km)`} value={form.tyres} onChange={(v) => set("tyres", v)} placeholder="0" />
               <NumberField
                 id="maintenanceReserve"
-                label="Maintenance reserve (ZMW/km)"
+                label={`Maintenance reserve (${country.currencyCode}/km)`}
                 value={form.maintenanceReserve}
                 onChange={(v) => set("maintenanceReserve", v)}
                 placeholder="0"
@@ -163,19 +186,23 @@ export default function CostPerKmCalculator() {
             <legend className="px-1 text-sm font-semibold text-navy">Driver &amp; tolls (per month)</legend>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <NumberField
-                id="driverWagesMonthlyZmw"
+                id="driverWagesMonthly"
                 label="Driver wages"
-                value={form.driverWagesMonthlyZmw}
-                onChange={(v) => set("driverWagesMonthlyZmw", v)}
+                value={form.driverWagesMonthly}
+                onChange={(v) => set("driverWagesMonthly", v)}
                 placeholder="0"
               />
               <NumberField
-                id="tollsMonthlyZmw"
+                id="tollsMonthly"
                 label="Tolls"
-                value={form.tollsMonthlyZmw}
-                onChange={(v) => set("tollsMonthlyZmw", v)}
+                value={form.tollsMonthly}
+                onChange={(v) => set("tollsMonthly", v)}
                 placeholder="0"
-                hint={`Heavy vehicles (4+ axles) pay ${formatZmw(HEAVY_VEHICLE_TOLLS.value.fourPlusAxleHeavyZmw)} per toll gate — multiply by gates on your route, not distance. ${formatSourceLabel(HEAVY_VEHICLE_TOLLS)}.`}
+                hint={
+                  country.tolls
+                    ? `Heavy vehicles (4+ axles) pay ${money(country.tolls.value.fourPlusAxleHeavy)} per toll gate — multiply by gates on your route, not distance. Source: ${country.tolls.source}.`
+                    : `Toll data not sourced yet for ${country.name}.`
+                }
               />
             </div>
           </fieldset>
@@ -187,21 +214,21 @@ export default function CostPerKmCalculator() {
               <>
                 <p className="text-sm font-medium text-muted">Total cost per kilometre</p>
                 <p className="mt-1 text-4xl font-bold text-navy">
-                  {formatZmw(result.totalCostPerKmZmw)}
+                  {money(result.totalCostPerKm)}
                   <span className="text-lg font-medium text-muted">/km</span>
                 </p>
                 <p className="mt-1 text-sm text-muted">
-                  {formatZmw(result.annualTotalCostZmw)} total per year at {inputs.annualDistanceKm.toLocaleString()} km
+                  {money(result.annualTotalCost)} total per year at {inputs.annualDistanceKm.toLocaleString()} km
                 </p>
 
                 <div className="mt-6 space-y-3">
                   {result.breakdown
-                    .filter((item) => item.perKmZmw > 0)
+                    .filter((item) => item.perKm > 0)
                     .map((item) => (
                       <div key={item.label}>
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-body">{item.label}</span>
-                          <span className="font-medium text-navy">{formatZmw(item.perKmZmw)}/km</span>
+                          <span className="font-medium text-navy">{money(item.perKm)}/km</span>
                         </div>
                         <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-border-soft" style={{ background: "var(--df-border)" }}>
                           <div

@@ -7,39 +7,41 @@ import {
   type RevenueMode,
   type TripProfitabilityInputs,
 } from "@/lib/calculators/tripProfitability";
-import { DIESEL_PRICE_ZMW_PER_LITRE, HEAVY_VEHICLE_TOLLS, formatSourceLabel } from "@/lib/benchmarks";
+import { formatMoney } from "@/lib/countries";
 import { whatsappHref } from "@/lib/nav";
-import { NumberField, toNumber, formatZmw } from "@/components/intelligence-hub/NumberField";
+import { NumberField, toNumber } from "@/components/intelligence-hub/NumberField";
 import { AiInsightPanel } from "@/components/intelligence-hub/AiInsightPanel";
+import { CountrySelector } from "@/components/intelligence-hub/CountrySelector";
+import { useSelectedCountry } from "@/components/intelligence-hub/useSelectedCountry";
 
 type FormState = {
   distanceKm: string;
   revenueMode: RevenueMode;
-  ratePerKmZmw: string;
-  lumpSumZmw: string;
-  fuelPriceZmwPerLitre: string;
+  ratePerKm: string;
+  lumpSum: string;
+  fuelPricePerLitre: string;
   fuelConsumptionLPer100Km: string;
-  driverAllowanceZmw: string;
-  tollsZmw: string;
-  borderFeesZmw: string;
-  tyresPerKmZmw: string;
-  maintenanceReservePerKmZmw: string;
-  otherCostsZmw: string;
+  driverAllowance: string;
+  tolls: string;
+  borderFees: string;
+  tyresPerKm: string;
+  maintenanceReservePerKm: string;
+  otherCosts: string;
 };
 
-const initialState: FormState = {
+const emptyState: FormState = {
   distanceKm: "",
   revenueMode: "perKm",
-  ratePerKmZmw: "",
-  lumpSumZmw: "",
-  fuelPriceZmwPerLitre: DIESEL_PRICE_ZMW_PER_LITRE.value.toString(),
+  ratePerKm: "",
+  lumpSum: "",
+  fuelPricePerLitre: "",
   fuelConsumptionLPer100Km: "",
-  driverAllowanceZmw: "",
-  tollsZmw: "",
-  borderFeesZmw: "",
-  tyresPerKmZmw: "",
-  maintenanceReservePerKmZmw: "",
-  otherCostsZmw: "",
+  driverAllowance: "",
+  tolls: "",
+  borderFees: "",
+  tyresPerKm: "",
+  maintenanceReservePerKm: "",
+  otherCosts: "",
 };
 
 const statusCopy: Record<string, { label: string; className: string; description: string }> = {
@@ -61,9 +63,16 @@ const statusCopy: Record<string, { label: string; className: string; description
 };
 
 export default function TripProfitabilityCalculator() {
-  const [form, setForm] = useState<FormState>(initialState);
+  const [form, setForm] = useState<FormState>(emptyState);
+  const [touchedFuelPrice, setTouchedFuelPrice] = useState(false);
+  const { country, countryCode, selectCountry } = useSelectedCountry();
+  const money = (v: number) => formatMoney(v, country);
+
+  const fuelPriceValue =
+    !touchedFuelPrice && country.dieselPricePerLitre ? country.dieselPricePerLitre.value.toString() : form.fuelPricePerLitre;
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
+    if (key === "fuelPricePerLitre") setTouchedFuelPrice(true);
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
@@ -71,37 +80,35 @@ export default function TripProfitabilityCalculator() {
     () => ({
       distanceKm: toNumber(form.distanceKm),
       revenueMode: form.revenueMode,
-      ratePerKmZmw: toNumber(form.ratePerKmZmw),
-      lumpSumZmw: toNumber(form.lumpSumZmw),
-      fuelPriceZmwPerLitre: toNumber(form.fuelPriceZmwPerLitre),
+      ratePerKm: toNumber(form.ratePerKm),
+      lumpSum: toNumber(form.lumpSum),
+      fuelPricePerLitre: toNumber(fuelPriceValue),
       fuelConsumptionLPer100Km: toNumber(form.fuelConsumptionLPer100Km),
-      driverAllowanceZmw: toNumber(form.driverAllowanceZmw),
-      tollsZmw: toNumber(form.tollsZmw),
-      borderFeesZmw: toNumber(form.borderFeesZmw),
-      tyresPerKmZmw: toNumber(form.tyresPerKmZmw),
-      maintenanceReservePerKmZmw: toNumber(form.maintenanceReservePerKmZmw),
-      otherCostsZmw: toNumber(form.otherCostsZmw),
+      driverAllowance: toNumber(form.driverAllowance),
+      tolls: toNumber(form.tolls),
+      borderFees: toNumber(form.borderFees),
+      tyresPerKm: toNumber(form.tyresPerKm),
+      maintenanceReservePerKm: toNumber(form.maintenanceReservePerKm),
+      otherCosts: toNumber(form.otherCosts),
     }),
-    [form]
+    [form, fuelPriceValue]
   );
 
   const result = useMemo(() => calculateTripProfitability(inputs), [inputs]);
   const hasEnoughToShow =
     inputs.distanceKm > 0 &&
     inputs.fuelConsumptionLPer100Km > 0 &&
-    (inputs.revenueMode === "perKm" ? inputs.ratePerKmZmw > 0 : inputs.lumpSumZmw > 0);
+    (inputs.revenueMode === "perKm" ? inputs.ratePerKm > 0 : inputs.lumpSum > 0);
   const status = statusCopy[result.status];
 
   function buildAiPrompt(): string {
     const revenueDescription =
-      inputs.revenueMode === "perKm"
-        ? `${formatZmw(inputs.ratePerKmZmw)}/km rate`
-        : `${formatZmw(inputs.lumpSumZmw)} lump sum`;
-    return `Trip profitability for a ${inputs.distanceKm} km trip offered at ${revenueDescription}:
-- Revenue: ${formatZmw(result.totalRevenueZmw)}
-- Total cost: ${formatZmw(result.totalCostZmw)} (fuel ${formatZmw(result.fuelCostZmw)}, tyres/maintenance ${formatZmw(result.distanceCostZmw)}, driver allowance ${formatZmw(inputs.driverAllowanceZmw)}, tolls ${formatZmw(inputs.tollsZmw)}, border fees ${formatZmw(inputs.borderFeesZmw)})
-- Gross profit: ${formatZmw(result.grossProfitZmw)} (${result.profitMarginPercent.toFixed(1)}% margin)
-- Break-even rate: ${formatZmw(result.breakEvenRatePerKmZmw)}/km
+      inputs.revenueMode === "perKm" ? `${money(inputs.ratePerKm)}/km rate` : `${money(inputs.lumpSum)} lump sum`;
+    return `Trip profitability for a ${inputs.distanceKm} km trip offered at ${revenueDescription} (${country.name}, ${country.currencyCode}):
+- Revenue: ${money(result.totalRevenue)}
+- Total cost: ${money(result.totalCost)} (fuel ${money(result.fuelCost)}, tyres/maintenance ${money(result.distanceCost)}, driver allowance ${money(inputs.driverAllowance)}, tolls ${money(inputs.tolls)}, border fees ${money(inputs.borderFees)})
+- Gross profit: ${money(result.grossProfit)} (${result.profitMarginPercent.toFixed(1)}% margin)
+- Break-even rate: ${money(result.breakEvenRatePerKm)}/km
 - Status: ${result.status}`;
   }
 
@@ -122,6 +129,13 @@ export default function TripProfitabilityCalculator() {
 
       <div className="mt-12 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_420px]">
         <div className="space-y-8">
+          <fieldset className="card-surface p-6">
+            <legend className="px-1 text-sm font-semibold text-navy">Country</legend>
+            <div className="mt-4">
+              <CountrySelector countryCode={countryCode} onChange={selectCountry} />
+            </div>
+          </fieldset>
+
           <fieldset className="card-surface p-6">
             <legend className="px-1 text-sm font-semibold text-navy">Route &amp; revenue</legend>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -162,18 +176,18 @@ export default function TripProfitabilityCalculator() {
               </div>
               {form.revenueMode === "perKm" ? (
                 <NumberField
-                  id="ratePerKmZmw"
-                  label="Offered rate (ZMW/km)"
-                  value={form.ratePerKmZmw}
-                  onChange={(v) => set("ratePerKmZmw", v)}
+                  id="ratePerKm"
+                  label={`Offered rate (${country.currencyCode}/km)`}
+                  value={form.ratePerKm}
+                  onChange={(v) => set("ratePerKm", v)}
                   placeholder="e.g. 30"
                 />
               ) : (
                 <NumberField
-                  id="lumpSumZmw"
-                  label="Offered total (ZMW)"
-                  value={form.lumpSumZmw}
-                  onChange={(v) => set("lumpSumZmw", v)}
+                  id="lumpSum"
+                  label={`Offered total (${country.currencyCode})`}
+                  value={form.lumpSum}
+                  onChange={(v) => set("lumpSum", v)}
                   placeholder="e.g. 12000"
                 />
               )}
@@ -192,11 +206,15 @@ export default function TripProfitabilityCalculator() {
                 hint="From your own fuel logs for this vehicle and load."
               />
               <NumberField
-                id="fuelPriceZmwPerLitre"
-                label="Diesel price (ZMW/litre)"
-                value={form.fuelPriceZmwPerLitre}
-                onChange={(v) => set("fuelPriceZmwPerLitre", v)}
-                hint={`Pre-filled from ${formatSourceLabel(DIESEL_PRICE_ZMW_PER_LITRE)}.`}
+                id="fuelPricePerLitre"
+                label={`Diesel price (${country.currencyCode}/litre)`}
+                value={fuelPriceValue}
+                onChange={(v) => set("fuelPricePerLitre", v)}
+                hint={
+                  country.dieselPricePerLitre
+                    ? `Pre-filled from Source: ${country.dieselPricePerLitre.source}.`
+                    : `Not sourced yet for ${country.name} — enter your own.`
+                }
               />
             </div>
           </fieldset>
@@ -205,46 +223,50 @@ export default function TripProfitabilityCalculator() {
             <legend className="px-1 text-sm font-semibold text-navy">Trip-specific costs</legend>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <NumberField
-                id="driverAllowanceZmw"
+                id="driverAllowance"
                 label="Driver allowance / per diem"
-                value={form.driverAllowanceZmw}
-                onChange={(v) => set("driverAllowanceZmw", v)}
+                value={form.driverAllowance}
+                onChange={(v) => set("driverAllowance", v)}
                 placeholder="0"
               />
               <NumberField
-                id="tollsZmw"
+                id="tolls"
                 label="Tolls (total for this trip)"
-                value={form.tollsZmw}
-                onChange={(v) => set("tollsZmw", v)}
+                value={form.tolls}
+                onChange={(v) => set("tolls", v)}
                 placeholder="0"
-                hint={`Heavy vehicles (4+ axles) pay ${formatZmw(HEAVY_VEHICLE_TOLLS.value.fourPlusAxleHeavyZmw)}/gate — multiply by gates on this route. ${formatSourceLabel(HEAVY_VEHICLE_TOLLS)}.`}
+                hint={
+                  country.tolls
+                    ? `Heavy vehicles (4+ axles) pay ${money(country.tolls.value.fourPlusAxleHeavy)}/gate — multiply by gates on this route. Source: ${country.tolls.source}.`
+                    : `Toll data not sourced yet for ${country.name}.`
+                }
               />
               <NumberField
-                id="borderFeesZmw"
+                id="borderFees"
                 label="Border fees / documentation"
-                value={form.borderFeesZmw}
-                onChange={(v) => set("borderFeesZmw", v)}
+                value={form.borderFees}
+                onChange={(v) => set("borderFees", v)}
                 placeholder="0"
               />
               <NumberField
-                id="otherCostsZmw"
+                id="otherCosts"
                 label="Other costs"
-                value={form.otherCostsZmw}
-                onChange={(v) => set("otherCostsZmw", v)}
+                value={form.otherCosts}
+                onChange={(v) => set("otherCosts", v)}
                 placeholder="0"
               />
               <NumberField
-                id="tyresPerKmZmw"
-                label="Tyres (ZMW/km)"
-                value={form.tyresPerKmZmw}
-                onChange={(v) => set("tyresPerKmZmw", v)}
+                id="tyresPerKm"
+                label={`Tyres (${country.currencyCode}/km)`}
+                value={form.tyresPerKm}
+                onChange={(v) => set("tyresPerKm", v)}
                 placeholder="0"
               />
               <NumberField
-                id="maintenanceReservePerKmZmw"
-                label="Maintenance reserve (ZMW/km)"
-                value={form.maintenanceReservePerKmZmw}
-                onChange={(v) => set("maintenanceReservePerKmZmw", v)}
+                id="maintenanceReservePerKm"
+                label={`Maintenance reserve (${country.currencyCode}/km)`}
+                value={form.maintenanceReservePerKm}
+                onChange={(v) => set("maintenanceReservePerKm", v)}
                 placeholder="0"
               />
             </div>
@@ -259,17 +281,17 @@ export default function TripProfitabilityCalculator() {
                   {status.label}
                 </span>
                 <p className="mt-4 text-sm font-medium text-muted">Gross profit</p>
-                <p className="mt-1 text-4xl font-bold text-navy">{formatZmw(result.grossProfitZmw)}</p>
+                <p className="mt-1 text-4xl font-bold text-navy">{money(result.grossProfit)}</p>
                 <p className="mt-1 text-sm text-muted">{status.description}</p>
 
                 <dl className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Revenue</dt>
-                    <dd className="font-medium text-navy">{formatZmw(result.totalRevenueZmw)}</dd>
+                    <dd className="font-medium text-navy">{money(result.totalRevenue)}</dd>
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Total cost</dt>
-                    <dd className="font-medium text-navy">{formatZmw(result.totalCostZmw)}</dd>
+                    <dd className="font-medium text-navy">{money(result.totalCost)}</dd>
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Margin</dt>
@@ -277,11 +299,11 @@ export default function TripProfitabilityCalculator() {
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Profit per km</dt>
-                    <dd className="font-medium text-navy">{formatZmw(result.profitPerKmZmw)}</dd>
+                    <dd className="font-medium text-navy">{money(result.profitPerKm)}</dd>
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-body">Minimum viable rate</dt>
-                    <dd className="font-medium text-navy">{formatZmw(result.breakEvenRatePerKmZmw)}/km</dd>
+                    <dd className="font-medium text-navy">{money(result.breakEvenRatePerKm)}/km</dd>
                   </div>
                 </dl>
 
