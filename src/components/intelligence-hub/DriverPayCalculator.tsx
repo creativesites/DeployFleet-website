@@ -243,14 +243,22 @@ ${r.secondaryLevyAmount > 0 ? `- ${r.secondaryLevyLabel}: ${money(r.secondaryLev
               <ul className="mt-3 space-y-2 text-sm text-body">
                 <li>
                   <strong className="text-navy">{country.socialSecurity.value.label}:</strong>{" "}
-                  {(country.socialSecurity.value.employeeRate * 100).toFixed(1)}% employee share, capped at{" "}
-                  {money(country.socialSecurity.value.employeeCapPerMonth)}/month. Source: {country.socialSecurity.source}.
+                  {(country.socialSecurity.value.employeeRate * 100).toFixed(1)}% employee share,{" "}
+                  {country.socialSecurity.value.employeeCapPerMonth === null
+                    ? "no cap"
+                    : `capped at ${money(country.socialSecurity.value.employeeCapPerMonth)}/month`}
+                  . Source: {country.socialSecurity.source}.
                 </li>
                 {country.secondaryLevy && (
                   <li>
                     <strong className="text-navy">{country.secondaryLevy.value.label}:</strong>{" "}
-                    {(country.secondaryLevy.value.employeeRate * 100).toFixed(1)}% of gross,{" "}
-                    {country.secondaryLevy.value.employeeCapPerMonth === null ? "no cap" : `capped at ${money(country.secondaryLevy.value.employeeCapPerMonth)}`}
+                    {country.secondaryLevy.value.employeeRate >= 1 && country.secondaryLevy.value.employeeCapPerMonth !== null
+                      ? `a flat ${money(country.secondaryLevy.value.employeeCapPerMonth)}/month`
+                      : `${(country.secondaryLevy.value.employeeRate * 100).toFixed(1)}% of gross, ${
+                          country.secondaryLevy.value.employeeCapPerMonth === null
+                            ? "no cap"
+                            : `capped at ${money(country.secondaryLevy.value.employeeCapPerMonth)}`
+                        }`}
                     . Source: {country.secondaryLevy.source}.
                   </li>
                 )}

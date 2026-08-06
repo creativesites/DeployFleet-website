@@ -90,11 +90,19 @@ second "Real predictions, not a mockup" section further down showing the
 Maintenance Agent's actual AI Predictions screen — added because the
 screenshot didn't fit the existing "Copilot Rail chat" slot (it's a
 different screen entirely) but was too good a real-data visual not to use
-somewhere. **Still a labeled placeholder** (`ScreenshotPlaceholder`,
-label text doubles as the shot needed):
-- Homepage AI Copilot section — still needs a Copilot Rail chat
-  screenshot (with a tool-lookup line visible) — waiting on the Copilot
-  Rail's current round of updates to finish before that one's taken.
+somewhere. **No labeled placeholders remain anywhere on the site** — the
+homepage AI Copilot section's `ScreenshotPlaceholder` (originally waiting
+on a dedicated Copilot Rail chat capture) was swapped for the same real
+`copilot-console.jpg` used on `/product/ai-copilot`, matching this site's
+existing pattern of reusing one product screenshot across both the
+homepage and its dedicated product page (`dispatch-assign.png`,
+`financial-intelligence.png`, and `compliance-center.png` all already did
+this before this section image was filled). A dedicated Copilot Rail chat
+capture (with a tool-lookup line visible) would still be a nice-to-have
+swap later, but the site no longer has a dashed "screenshot needed" box
+anywhere — this environment has no network access to the live demo server
+to capture one directly, so a real, already-existing product image was
+the honest choice over leaving a placeholder or fabricating one.
 
 The Hero renders a single landscape `hero-video.mp4` (1280×720) at every
 breakpoint (`object-cover` inside a responsive `max-w-6xl` frame, not a
@@ -111,6 +119,18 @@ into the Hero by mistake (see `git log -- public/screenshots/mission-
 control-mobile.mp4` for the rename) — its own content is Mission Control,
 not a hero shot, and it's now used in the section that's actually about
 Mission Control.
+
+**Homepage now cross-sells the Intelligence Hub directly**: a new
+`CalculatorsSection` (`src/components/home/CalculatorsSection.tsx`) sits
+between `TrustSection` and `ProofSection` — a soft, lower-commitment CTA
+ahead of the harder "book a demo" `CtaSection` that follows it. Shows 6
+of the 10 calculators (a curated spread across cost/revenue/HR/asset/
+compliance/software-ROI, not just the first 6 in `nav.ts`'s array, which
+cluster on Phase A/B cost calculators), each with a small inline SVG icon,
+its real description from `intelligenceHubCalculators` (the same single
+source of truth the `/intelligence-hub` index page reads from — nothing
+duplicated), and an "Explore all 10 calculators" button linking to the
+full hub.
 
 - **WhatsApp number** — `WHATSAPP_NUMBER` in `src/lib/nav.ts` is set to
   `260979046745`, sourced from the number printed on the hero promo
@@ -398,18 +418,38 @@ set, which stays exactly as-is for fields a slider genuinely doesn't fit
   first, often data-constrained audience, not a hero showcase, so a real
   3D engine's bundle/performance cost isn't worth it here.
 
-**Cost Per Kilometre is the flagship retrofit** — every input is now a
+**Cost Per Kilometre was the flagship retrofit** — every input a
 `SliderField` (ranges sized to the selected country's own currency scale
 via a diesel-price-derived magnitude proxy, so a K3,000 ZMW slider and a
 US$3,000 slider both get sensible ranges), the results panel leads with
 an animated `HeroMetric`, a `MiniBarChart` cost breakdown, a `ScenarioRow`
 (Fuel ±10%, Distance +20%, Driver wages +10%, Cut maintenance 15%), and
-the `.df-tilt-card` treatment. **The other 9 calculators still use the
-original form pattern** — rolling the Control Panel treatment to them is
-the next step in the plan's rollout sequence (§08), gated behind this
-flagship proving the pattern first, the same "prove it once, then roll it
-out mechanically" discipline this project has used since the Odoo
-product's own domain-completeness-first rollout.
+the `.df-tilt-card` treatment. **The Control Panel treatment has since
+been rolled out to all 9 remaining calculators**, closing the rollout
+gated behind this flagship proving the pattern first:
+
+- **Trip Profitability, Driver Pay & Advance, Fleet TCO, Break-Even
+  Utilisation** — sliders/steppers throughout, an animated `HeroMetric`
+  headline, a `MiniBarChart` breakdown, and 5 scenario chips each. Driver
+  Pay and Break-Even also get a `HealthGauge` (take-home share vs. gross;
+  utilisation vs. break-even) — a natural fit since both numbers are
+  already percentage-of-healthy metrics, unlike Cost Per Km's total
+  figure.
+- **Compliance & Penalty Risk, Tyre Cost Per Km, Load Optimisation & Axle
+  Weight, ROI & Payback, Fuel Cost & Efficiency** — same treatment, plus
+  two genuinely new interactions rather than generic scenario chips where
+  the domain called for it: Compliance & Penalty Risk's scenario row
+  **fast-forwards the engine's reference date** (+30/60/90 days) to show
+  expiry risk building over time, without touching the real system clock;
+  Load Optimisation shows a **`HealthGauge` per axle group** (load vs. its
+  legal limit), not just one summary number, since a single overloaded
+  axle is the actual failure mode a weighbridge checks for.
+
+Every retrofit reuses the same component set with zero new primitives —
+the five-layer formula and the six components proved sufficient across
+all 10 calculators' genuinely different shapes (single-truck economics,
+multi-year projections, per-document compliance tracking, per-axle
+regulatory checks, and a two-option comparison).
 
 **Real bug caught during click-testing** (not caught until actually
 switching countries in a browser): the diesel-price slider didn't
@@ -429,38 +469,88 @@ see below.
 Zambia stays the default. `src/lib/countries.ts` defines a
 `CountryConfig` per country — currency, income tax bands, social
 security, an optional secondary levy, tolls, and diesel price, each
-independently `SourcedValue`-wrapped or honestly left `null` under a
-`"currency-only"` coverage tier rather than guessed. **Never backfill a
-missing figure with another country's number** — a missing figure means
-the UI shows "not sourced yet," not a silently wrong answer in the wrong
-currency.
+independently `SourcedValue`-wrapped or honestly left `null`/zero rather
+than guessed. **Never backfill a missing figure with another country's
+number** — a missing figure means the UI shows "not sourced yet," not a
+silently wrong answer in the wrong currency. **All 6 target countries are
+now `coverage: "full"`** — South Africa, Botswana, Namibia, and
+Mozambique were researched and populated in the same pass that rolled out
+the calculator retrofit, closing what had been the plan's single largest
+open gap; the `"currency-only"` coverage tier (and the
+`currencyOnlyCountry()` helper that built it) is now unused code, removed
+rather than left dead.
 
-- **Zambia** — `coverage: "full"`, unchanged from the original
-  single-country data.
-- **Zimbabwe** — `coverage: "full"`, **priced in USD by explicit product
-  decision**, not ZWG — in practice most fleet-scale transactions in
-  Zimbabwe are USD-denominated regardless of the official multi-currency
-  regime. Real sourced 2026 data: ZERA diesel price (fortnightly review,
-  flagged volatile the same way Zambia's is), ZIMRA's direct USD PAYE
-  bands (annual, not monthly — the engine handles either) plus a 3% AIDS
-  levy on the computed tax, and NSSA contribution rates.
-- **South Africa, Botswana, Namibia, Mozambique** — `coverage:
-  "currency-only"`: currency code/symbol/locale are set (safe, universally
-  known ISO facts), everything else is `null` pending real per-country
-  research. Proposed research order (front-loaded by expected source
-  reliability, not alphabetical): South Africa (SARS publishes PAYE
-  tables directly) → Botswana → Namibia → Mozambique (Portuguese-language
-  sourcing raises the bar, plus genuine Beira/Maputo corridor complexity
-  relevant to Zambian operators specifically).
+- **Zambia** — unchanged from the original single-country data.
+- **Zimbabwe** — **priced in USD by explicit product decision**, not
+  ZWG. Real sourced 2026 data: ZERA diesel price, ZIMRA's direct USD PAYE
+  bands (annual) plus a 3% AIDS levy on the computed tax, and NSSA
+  contribution rates.
+- **South Africa** — SARS PAYE for the 2026/27 tax year, DMRE diesel
+  (inland benchmark), UIF, and N3TC/SANRAL toll tariffs (De Hoek Plaza).
+  The one genuinely interesting modeling problem: **SARS doesn't publish
+  a 0% band** — it taxes from R1 at 18% and subtracts a flat annual
+  primary rebate (R17,820). Converted into this app's plain additive-band
+  schema as a `{from: 0, to: 99000, rate: 0}` band followed by the
+  original SARS brackets unchanged — this is a mathematically **exact**
+  conversion (R17,820 ÷ 18% = R99,000, SARS's own published "tax
+  threshold"), verified to produce identical tax at every income level
+  for a taxpayer under 65, not an approximation. Doesn't model the
+  additional age-based secondary/tertiary rebates.
+- **Botswana** — BURS PAYE (including the new 27.5% top band added 1 July
+  2026), BERA diesel pricing. Genuinely has **no mandatory statutory
+  social security** for private-sector employees (confirmed across
+  multiple independent sources) and **no domestic toll-road network** —
+  both modeled as real sourced zeros (`employeeRate: 0`,
+  `fourPlusAxleHeavy: 0`), not missing data, so `coverage: "full"` stays
+  honest.
+- **Namibia** — Namibian tax bands for the 2026/27 year of assessment
+  (tax year runs March–February), MME diesel pricing (Walvis Bay/coastal
+  reference), and the Social Security Commission's 0.9%/0.9% contribution
+  — its cap had a documented, dated increase (N$81 → N$99/month) on 1
+  March 2025 that several secondary sources still report as the old
+  figure; used the current one. Also genuinely has **no toll roads** —
+  Namibia funds roads via fuel levies and distance-based charges instead
+  — modeled the same real-zero way as Botswana's tolls.
+- **Mozambique** — IRPS bands (**monthly**, unlike every other country
+  here, which are annual — the engine already handled both periods),
+  ARENE diesel pricing, and INSS (3% employee / 4% employer) with **no
+  cap found in any source**, the first country in this app where a
+  social-security cap doesn't exist — required widening
+  `SocialSecurityConfig.employeeCapPerMonth` from `number` to
+  `number | null` (and `driverPay.ts`'s cap logic to `?? Infinity`,
+  mirroring the pattern `secondaryLevy` already used). Also has a genuine
+  second payroll deduction beyond IRPS/INSS — **Imposto Pessoal
+  Autárquico (IPA)**, a flat municipal tax collected through payroll
+  rather than a percentage of salary — modeled via the existing
+  rate-of-gross-capped-at-X `secondaryLevy` shape as `employeeRate: 1`
+  capped at the flat amount (a deliberate trick to express "always
+  exactly this flat figure," documented inline, not a real 100% rate).
+  The only concrete IPA figure found is Maputo's 2022 rate — flagged
+  `confidence: "low"` and as approximate rather than treated as current.
+  Mozambique toll data (TRAC's N4 Moamba Plaza) is dated September 2023,
+  the oldest `asOf` of any figure in this app, but confirmed via
+  Mozambican press that the government's May 2025 tariff revision
+  explicitly excluded heavy trucks — still the best-evidenced current
+  figure.
 
-**The `driverPay.ts` engine is now country-parametric**, not
-Zambia-shaped — it takes an `IncomeTaxConfig` (bands + a `period` of
-`"monthly"` or `"annual"`, plus an optional `levyOnTaxPercent` for
-Zimbabwe's AIDS-levy shape), a `SocialSecurityConfig`, and an optional
-`SecondaryLevyConfig`, instead of hardcoded NAPSA/PAYE/NHIMA fields. Both
-Zambia and Zimbabwe are exercised end-to-end in `driverPay.test.ts`,
-including the annual-to-monthly band conversion and the levy-on-tax
-calculation — the two shapes genuinely differ, not just the numbers.
+Every country's data was gathered by parallel research passes (one per
+country) against named primary/authoritative sources (SARS, BURS, NamRA-
+equivalent, ARENE, DMRE, BERA, MME, INSS, SANRAL/N3TC, TRAC), each
+citing a specific document and as-of date, with genuine source
+disagreements flagged and resolved rather than silently picked — see
+each country's `note` fields in `countries.ts` for the full reasoning
+trail, not just the headline numbers.
+
+**The `driverPay.ts` engine is country-parametric**, not Zambia-shaped —
+it takes an `IncomeTaxConfig` (bands + a `period` of `"monthly"` or
+`"annual"`, plus an optional `levyOnTaxPercent` for Zimbabwe's AIDS-levy
+shape), a `SocialSecurityConfig`, and an optional `SecondaryLevyConfig`,
+instead of hardcoded NAPSA/PAYE/NHIMA fields. All 6 countries are
+exercised end-to-end (unit tests plus a live-browser check per country on
+the Driver Pay calculator), covering the annual-to-monthly band
+conversion, the levy-on-tax calculation, the uncapped-social-security
+path, and the flat-secondary-levy trick — genuinely different shapes, not
+just different numbers.
 
 **The `Zmw` field-suffix removal (locked decision, option "c" from the
 plan)**: `costPerKm.ts`, `tripProfitability.ts`, and `driverPay.ts` — the
@@ -522,14 +612,20 @@ with correct source attribution, logout clears the session. See
 `.env.example` for `ADMIN_PASSWORD`/`ADMIN_SESSION_SECRET`/
 `KV_REST_API_URL`/`KV_REST_API_TOKEN`.
 
-**Genuinely open, not blocking:** rolling the Control Panel component set
-to the other 9 calculators; researching and populating South
-Africa/Botswana/Namibia/Mozambique's tax/toll/diesel data; confirming
-whether the harmonized axle-load limits already sourced for Load
-Optimisation actually apply as-is to South Africa (which runs its own
-National Road Traffic Act / TRH 11 limits) and Namibia, rather than
-assuming the Tripartite framework covers all 6 countries uniformly; and
-extending the admin dashboard's editable fields beyond diesel price.
+**Both items originally listed here as open — rolling the Control Panel
+component set to the other 9 calculators, and researching/populating
+South Africa/Botswana/Namibia/Mozambique's tax/toll/diesel data — are now
+done** (see "Experience Layer" and "Multi-country support" above).
+**Genuinely still open, not blocking:** confirming whether the harmonized
+axle-load limits already sourced for Load Optimisation actually apply
+as-is to South Africa (which runs its own National Road Traffic Act / TRH
+11 limits) and Namibia, rather than assuming the Tripartite framework
+covers all 6 countries uniformly — `AXLE_LOAD_LIMITS` in `benchmarks.ts`
+is still one shared, Zambia-sourced set of limits used for every country
+on the Load Optimisation calculator, not yet split per-country; and
+extending the admin dashboard's editable fields beyond diesel price (tax
+bands, tolls, and social security rates for all 6 countries now live in
+`countries.ts`, edited via a reviewed PR).
 
 ## Messaging guardrails
 

@@ -242,12 +242,20 @@ export default function CostPerKmCalculator() {
               label={country.socialSecurity ? `${country.socialSecurity.value.label} (employer share)` : "Social security (employer share)"}
               value={toNumber(form.socialSecurity)}
               onChange={(v) => set("socialSecurity", v.toString())}
-              max={country.socialSecurity ? Math.ceil(country.socialSecurity.value.employeeCapPerMonth * 1.2) : Math.ceil(scale * 100)}
+              max={
+                country.socialSecurity && country.socialSecurity.value.employeeCapPerMonth !== null
+                  ? Math.ceil(country.socialSecurity.value.employeeCapPerMonth * 1.2)
+                  : Math.ceil(scale * 100)
+              }
               step={Math.max(0.5, Math.round(scale * 0.5))}
               unit={country.currencyCode}
               hint={
                 country.socialSecurity
-                  ? `${(country.socialSecurity.value.employerRate * 100).toFixed(1)}% of gross, capped at ${money(country.socialSecurity.value.employeeCapPerMonth)}/month. Source: ${country.socialSecurity.source}.`
+                  ? `${(country.socialSecurity.value.employerRate * 100).toFixed(1)}% of gross, ${
+                      country.socialSecurity.value.employeeCapPerMonth === null
+                        ? "no cap"
+                        : `capped at ${money(country.socialSecurity.value.employeeCapPerMonth)}/month`
+                    }. Source: ${country.socialSecurity.source}.`
                   : `Not sourced yet for ${country.name}.`
               }
             />

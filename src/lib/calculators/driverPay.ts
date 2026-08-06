@@ -53,7 +53,7 @@ export function calculateDriverPay(inputs: DriverPayInputs): DriverPayResult {
   const overtimePay = Math.max(0, inputs.overtimeHours) * Math.max(0, inputs.overtimeRatePerHour);
   const grossPay = Math.max(0, inputs.baseSalaryMonthly) + overtimePay + Math.max(0, inputs.tripAllowancesMonthly);
 
-  const socialSecurityAmount = Math.min(grossPay * inputs.socialSecurity.employeeRate, inputs.socialSecurity.employeeCapPerMonth);
+  const socialSecurityAmount = Math.min(grossPay * inputs.socialSecurity.employeeRate, inputs.socialSecurity.employeeCapPerMonth ?? Infinity);
 
   const monthlyTaxableBase = grossPay - socialSecurityAmount;
   const incomeTaxAmount =

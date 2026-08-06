@@ -7,14 +7,22 @@ describe("countries", () => {
     expect(getCountry("ZM").coverage).toBe("full");
   });
 
-  it("marks Zambia and Zimbabwe as fully covered, the other four as currency-only", () => {
-    expect(COUNTRIES.ZM.coverage).toBe("full");
-    expect(COUNTRIES.ZW.coverage).toBe("full");
-    for (const code of ["ZA", "BW", "NA", "MZ"] as const) {
-      expect(COUNTRIES[code].coverage).toBe("currency-only");
-      expect(COUNTRIES[code].incomeTax).toBeNull();
-      expect(COUNTRIES[code].dieselPricePerLitre).toBeNull();
+  it("marks all 6 target countries as fully covered", () => {
+    for (const code of ["ZM", "ZW", "ZA", "BW", "NA", "MZ"] as const) {
+      expect(COUNTRIES[code].coverage).toBe("full");
+      expect(COUNTRIES[code].incomeTax).not.toBeNull();
+      expect(COUNTRIES[code].socialSecurity).not.toBeNull();
+      expect(COUNTRIES[code].dieselPricePerLitre).not.toBeNull();
     }
+  });
+
+  it("gives Botswana and Namibia a genuine sourced zero for tolls, not a missing value", () => {
+    expect(COUNTRIES.BW.tolls?.value.fourPlusAxleHeavy).toBe(0);
+    expect(COUNTRIES.NA.tolls?.value.fourPlusAxleHeavy).toBe(0);
+  });
+
+  it("allows a null social security cap for an uncapped scheme (Mozambique's INSS)", () => {
+    expect(COUNTRIES.MZ.socialSecurity?.value.employeeCapPerMonth).toBeNull();
   });
 
   it("gives Zimbabwe USD as its currency, not ZWG", () => {
