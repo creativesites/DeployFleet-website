@@ -354,6 +354,183 @@ benchmark yet (fuel consumption, insurance, driver wages, tyres,
 maintenance) are left blank rather than seeded with an invented "typical"
 number.
 
+### Experience Layer — the "Fleet Control Panel" redesign
+
+Full audit and plan published as an artifact:
+[Intelligence Hub — Experience Layer & Multi-Country Plan](https://claude.ai/code/artifact/c97e0e47-3175-4341-8401-8449504b0afa).
+Governing reframe: not "calculator," not "dashboard," but a **control
+panel** — controls on one side, live-responding instruments on the
+other. All net-new components live in `src/components/intelligence-hub/`
+alongside the original `NumberField`/`TextField`/`DateField`/`SelectField`
+set, which stays exactly as-is for fields a slider genuinely doesn't fit
+(dates, free text, categorical selects):
+
+- **`SliderField`** — native `<input type="range">` (accessible by
+  construction: keyboard arrows, screen readers) with a custom CSS
+  thumb/track (`.df-slider` in `globals.css`) and a gradient fill computed
+  inline from the live value. The numeric label is always directly
+  editable on tap — precision typing is never sacrificed for tactility.
+- **`StepperField`** — `[ − ] value [ + ]`, 44px touch targets, for
+  discrete counts.
+- **`HeroMetric`** — the big result number counts through intermediate
+  values on change (~450ms, framer-motion's imperative `animate()`
+  driving `textContent` directly, not a React re-render per frame) rather
+  than jumping instantly. Snaps immediately under
+  `prefers-reduced-motion`.
+- **`HealthGauge`** — a segmented horizontal bar (not a radial dial —
+  cheaper to build well, reads faster on a narrow mobile card) using the
+  *existing* `--df-emerald`/`--df-amber`/`--df-danger` tokens, spring-
+  animated. Not force-fitted onto every calculator — Cost Per Kilometre
+  deliberately doesn't have one, since it has no natural pass/fail
+  threshold the way margin-based calculators do; inventing one would
+  violate the same never-fabricate discipline that governs the benchmark
+  data.
+- **`MiniBarChart`** — `recharts`, no axes/gridlines/legend. A handful of
+  labeled cost-breakdown bars, not a BI chart.
+- **`ScenarioRow`** — tap-to-apply what-if chips (`Scenario<TInputs> =
+  { label, apply: (inputs) => inputs }`), each a pure transform re-run
+  through the same unmodified engine function. The single highest-
+  leverage addition beyond the five-layer formula: it's the mechanism
+  that turns "fill in a form once" into "explore for two extra minutes."
+- **`.df-tilt-card`** — a CSS-only, fixed-angle 3D hover tilt (no mouse-
+  tracking JS). The deliberate, documented alternative to a WebGL/
+  three.js dependency: this is a form-dense calculator UI for a mobile-
+  first, often data-constrained audience, not a hero showcase, so a real
+  3D engine's bundle/performance cost isn't worth it here.
+
+**Cost Per Kilometre is the flagship retrofit** — every input is now a
+`SliderField` (ranges sized to the selected country's own currency scale
+via a diesel-price-derived magnitude proxy, so a K3,000 ZMW slider and a
+US$3,000 slider both get sensible ranges), the results panel leads with
+an animated `HeroMetric`, a `MiniBarChart` cost breakdown, a `ScenarioRow`
+(Fuel ±10%, Distance +20%, Driver wages +10%, Cut maintenance 15%), and
+the `.df-tilt-card` treatment. **The other 9 calculators still use the
+original form pattern** — rolling the Control Panel treatment to them is
+the next step in the plan's rollout sequence (§08), gated behind this
+flagship proving the pattern first, the same "prove it once, then roll it
+out mechanically" discipline this project has used since the Odoo
+product's own domain-completeness-first rollout.
+
+**Real bug caught during click-testing** (not caught until actually
+switching countries in a browser): the diesel-price slider didn't
+re-baseline when switching countries, so a scenario-adjusted Zambia-scale
+price (~K29/L) carried over verbatim into Zimbabwe's completely different
+USD scale, producing a nonsense ~US$29/L default. Fixed by resetting the
+"touched" flag during render when `countryCode` changes — React's
+documented pattern for "reset state when a prop changes" — rather than in
+a `useEffect`, since this project's ESLint config (the React Compiler
+plugin's `react-hooks/set-state-in-effect` rule) flags synchronous
+`setState` calls inside an effect body as a cascading-render
+anti-pattern. That same rule shaped `useSelectedCountry`'s design too —
+see below.
+
+### Multi-country support
+
+Zambia stays the default. `src/lib/countries.ts` defines a
+`CountryConfig` per country — currency, income tax bands, social
+security, an optional secondary levy, tolls, and diesel price, each
+independently `SourcedValue`-wrapped or honestly left `null` under a
+`"currency-only"` coverage tier rather than guessed. **Never backfill a
+missing figure with another country's number** — a missing figure means
+the UI shows "not sourced yet," not a silently wrong answer in the wrong
+currency.
+
+- **Zambia** — `coverage: "full"`, unchanged from the original
+  single-country data.
+- **Zimbabwe** — `coverage: "full"`, **priced in USD by explicit product
+  decision**, not ZWG — in practice most fleet-scale transactions in
+  Zimbabwe are USD-denominated regardless of the official multi-currency
+  regime. Real sourced 2026 data: ZERA diesel price (fortnightly review,
+  flagged volatile the same way Zambia's is), ZIMRA's direct USD PAYE
+  bands (annual, not monthly — the engine handles either) plus a 3% AIDS
+  levy on the computed tax, and NSSA contribution rates.
+- **South Africa, Botswana, Namibia, Mozambique** — `coverage:
+  "currency-only"`: currency code/symbol/locale are set (safe, universally
+  known ISO facts), everything else is `null` pending real per-country
+  research. Proposed research order (front-loaded by expected source
+  reliability, not alphabetical): South Africa (SARS publishes PAYE
+  tables directly) → Botswana → Namibia → Mozambique (Portuguese-language
+  sourcing raises the bar, plus genuine Beira/Maputo corridor complexity
+  relevant to Zambian operators specifically).
+
+**The `driverPay.ts` engine is now country-parametric**, not
+Zambia-shaped — it takes an `IncomeTaxConfig` (bands + a `period` of
+`"monthly"` or `"annual"`, plus an optional `levyOnTaxPercent` for
+Zimbabwe's AIDS-levy shape), a `SocialSecurityConfig`, and an optional
+`SecondaryLevyConfig`, instead of hardcoded NAPSA/PAYE/NHIMA fields. Both
+Zambia and Zimbabwe are exercised end-to-end in `driverPay.test.ts`,
+including the annual-to-monthly band conversion and the levy-on-tax
+calculation — the two shapes genuinely differ, not just the numbers.
+
+**The `Zmw` field-suffix removal (locked decision, option "c" from the
+plan)**: `costPerKm.ts`, `tripProfitability.ts`, and `driverPay.ts` — the
+3 calculators that actually touch country-specific tax/toll/currency data
+— had their field names de-Zambia'd (`fuelPriceZmwPerLitre` →
+`fuelPricePerLitre`, `napsa` → `socialSecurity`, etc.). The other 7
+calculators' field names are untouched — they were never Zambia-specific
+to begin with (Fleet TCO, Break-Even, etc. don't reference a currency in
+their field names), so renaming them would have been churn with no
+correctness benefit.
+
+A `CountrySelector` (`useSelectedCountry`, `localStorage`-backed via
+`useSyncExternalStore` — the React-recommended, hydration-safe pattern
+for external mutable state, chosen specifically to avoid the same
+set-state-in-effect lint violation noted above) is wired into all 3
+country-sensitive calculators, defaulting to Zambia, persisting per-
+browser like every other calculator input in this product.
+
+### Admin dashboard (`/admin`)
+
+A real, working implementation of "admin-editable data," not just the
+file-based `countries.ts` pattern alone — see the plan's §07 for the full
+three-option tradeoff (file-based / lightweight KV / real backend+auth)
+this resolves. Password-gated (`ADMIN_PASSWORD` env var; unset means
+`/admin` shows "not configured" and refuses every login, the same kill-
+switch contract as `AI_FEATURES_ENABLED`), signed httpOnly session
+cookies via Node's built-in `crypto` HMAC (no new auth dependency — Clerk
+stays the confirmed Phase E/F stack for real multi-user accounts; this is
+one shared operator password, not a user system).
+
+`src/lib/adminStore.ts` is the actual "Option A progressing to Option C"
+bridge: a `KeyValueStore` interface with an in-memory fallback (works
+everywhere with zero setup, including this dev environment, but honestly
+non-persistent in a real Vercel deployment — the same class of caveat
+already carried by the AI rate limiter's in-memory `Map`) and a real
+Upstash Redis-backed implementation that activates automatically the
+moment `KV_REST_API_URL`/`KV_REST_API_TOKEN` (Vercel's own env var names
+when a Redis/KV integration is attached from the Marketplace) or
+`UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` are present — **no
+code change needed to go from A to C**, only attaching a store in the
+Vercel dashboard. The `/admin` UI itself shows an honest "not persistent
+yet, attach a KV store" banner when running on the fallback, rather than
+implying a durability it doesn't have.
+
+**Only diesel price is editable through the UI today** — the one figure
+genuinely volatile enough to need updating without a code deploy (both
+Zambia's and Zimbabwe's own sourced notes flag it as reviewed monthly/
+fortnightly). Tax bands, tolls, and social security rates stay in the
+reviewed-PR path in `countries.ts` — a from-scratch nested-object form
+editor for those wasn't built in this round, named explicitly as the next
+increment rather than silently out of scope. `useSelectedCountry` fetches
+`/api/diesel-price` (public `GET`; only the `PUT` is session-gated) once
+per page visit and merges any admin override over the static sourced
+default, so every country-aware calculator picks up an admin edit with
+zero per-calculator wiring. Verified end-to-end in a real browser: wrong
+password rejected, correct login succeeds, a Zambia diesel-price edit
+persists through the store and immediately appears on Cost Per Kilometre
+with correct source attribution, logout clears the session. See
+`.env.example` for `ADMIN_PASSWORD`/`ADMIN_SESSION_SECRET`/
+`KV_REST_API_URL`/`KV_REST_API_TOKEN`.
+
+**Genuinely open, not blocking:** rolling the Control Panel component set
+to the other 9 calculators; researching and populating South
+Africa/Botswana/Namibia/Mozambique's tax/toll/diesel data; confirming
+whether the harmonized axle-load limits already sourced for Load
+Optimisation actually apply as-is to South Africa (which runs its own
+National Road Traffic Act / TRH 11 limits) and Namibia, rather than
+assuming the Tripartite framework covers all 6 countries uniformly; and
+extending the admin dashboard's editable fields beyond diesel price.
+
 ## Messaging guardrails
 
 Do not claim, anywhere on this site, without checking with the product
