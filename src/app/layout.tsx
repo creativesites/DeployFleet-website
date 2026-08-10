@@ -1,9 +1,17 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { Inter } from "next/font/google";
+import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import WhatsAppFloatingButton from "@/components/WhatsAppFloatingButton";
+import PageviewTracker from "@/components/PageviewTracker";
+
+// ClerkProvider throws if NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is missing —
+// only wrap with it once real Clerk keys exist, so the rest of the site
+// (which never touches Clerk) keeps working without them configured.
+const clerkConfigured = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 const inter = Inter({
   variable: "--font-inter",
@@ -35,15 +43,30 @@ export const metadata: Metadata = {
   },
 };
 
+function Body({ children }: { children: ReactNode }) {
+  return (
+    <body className="flex min-h-full flex-col bg-canvas text-body">
+      <Navbar />
+      <main className="flex-1">{children}</main>
+      <Footer />
+      <WhatsAppFloatingButton />
+      <PageviewTracker />
+    </body>
+  );
+}
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
+  const body = clerkConfigured ? (
+    <ClerkProvider>
+      <Body>{children}</Body>
+    </ClerkProvider>
+  ) : (
+    <Body>{children}</Body>
+  );
+
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col bg-canvas text-body">
-        <Navbar />
-        <main className="flex-1">{children}</main>
-        <Footer />
-        <WhatsAppFloatingButton />
-      </body>
+      {body}
     </html>
   );
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { WHATSAPP_NUMBER, whatsappHref } from "@/lib/nav";
+import { submitLead } from "@/lib/leads";
 
 export default function CtaSection() {
   const [name, setName] = useState("");
@@ -12,6 +13,11 @@ export default function CtaSection() {
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const message = `Hi DeployFleet, I'd like to see it running with my own fleet data.\n\nName: ${name}\nCompany: ${company}\nWhatsApp: ${phone}`;
+
+    // Fire-and-forget — never blocks the WhatsApp handoff below, which
+    // stays the real, always-working submission path.
+    submitLead({ name, company, phone, source: "homepage-cta" });
+
     window.open(
       `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`,
       "_blank",

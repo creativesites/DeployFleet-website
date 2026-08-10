@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getStore } from "@/lib/adminStore";
-import { ADMIN_SESSION_COOKIE, verifySessionToken } from "@/lib/adminAuth";
+import { requireAdmin } from "@/lib/adminAccess";
 import { COUNTRIES, type CountryCode } from "@/lib/countries";
 
 const STORE_KEY = "diesel-price-overrides";
@@ -26,10 +26,8 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
-  const session = request.cookies.get(ADMIN_SESSION_COOKIE)?.value;
-  if (!verifySessionToken(session)) {
-    return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 });
-  }
+  const denied = await requireAdmin();
+  if (denied) return denied;
 
   let body: { countryCode?: string; value?: number };
   try {

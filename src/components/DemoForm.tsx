@@ -2,15 +2,20 @@
 
 import { useState, type FormEvent } from "react";
 import { WHATSAPP_NUMBER } from "@/lib/nav";
+import { submitLead, type LeadSource } from "@/lib/leads";
 
 type DemoFormProps = {
   submitLabel?: string;
   intro?: string;
+  source?: LeadSource;
+  onSubmitted?: () => void;
 };
 
 export default function DemoForm({
   submitLabel = "Book My Demo",
   intro,
+  source = "contact-form",
+  onSubmitted,
 }: DemoFormProps) {
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
@@ -30,11 +35,17 @@ export default function DemoForm({
       .filter(Boolean)
       .join("\n");
 
+    // Fire-and-forget — never blocks the WhatsApp handoff below, which
+    // stays the real, always-working submission path.
+    submitLead({ name, company, phone, fleetSize, source });
+
     window.open(
       `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`,
       "_blank",
       "noopener,noreferrer"
     );
+
+    onSubmitted?.();
   }
 
   return (

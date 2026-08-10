@@ -1,0 +1,56 @@
+rules_version = '2';
+
+// Security model for the DeployFleet marketing site's Firestore use:
+//
+// - `leads` and `pageviews` are public-write, create-only, field-
+//   validated collections — visitors submitting a form or loading a
+//   page aren't signed in, so there's no auth to gate the write on.
+//   Every other operation (read/update/delete) is denied to the client
+//   entirely; the admin dashboard reads and updates this data through
+//   the Firebase Admin SDK server-side (see src/lib/firebaseAdmin.ts),
+//   which bypasses these rules under its own service-account
+//   credential, not through the client SDK.
+// - This is the actual security boundary for this project, not the
+//   firebaseConfig values shipped in the client bundle (those are
+//   non-secret by Firebase's own design — see the comment in
+//   src/lib/firebase.ts).
+//
+// Deploy this file via the Firebase Console (Firestore Database > Rules
+// tab, paste and Publish) or `firebase deploy --only firestore:rules`
+// with the Firebase CLI logged into the project — neither is something
+// this repo's CI/dev environment can do on its own, since it requires
+// your own Firebase account credentials.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /leads/{leadId} {
+      allow read, update, delete: if false;
+      allow create: if request.resource.data.keys().hasAll(["name", "company", "phone", "source", "status", "createdAt"])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+        && request.resource.data.company is string
+        && request.resource.data.company.size() > 0 && request.resource.data.company.size() <= 200
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() > 0 && request.resource.data.phone.size() <= 50
+        && request.resource.data.source in ["contact-form", "homepage-cta", "demo-gate"]
+        && request.resource.data.status == "new"
+        && request.resource.data.createdAt == request.time
+        && (!("fleetSize" in request.resource.data) || request.resource.data.fleetSize == null || (request.resource.data.fleetSize is string && request.resource.data.fleetSize.size() <= 100))
+        && (!("message" in request.resource.data) || request.resource.data.message == null || (request.resource.data.message is string && request.resource.data.message.size() <= 2000));
+    }
+
+    match /pageviews/{pageviewId} {
+      allow read, update, delete: if false;
+      allow create: if request.resource.data.keys().hasAll(["path", "visitorId", "createdAt"])
+        && request.resource.data.path is string && request.resource.data.path.size() <= 500
+        && request.resource.data.visitorId is string && request.resource.data.visitorId.size() <= 100
+        && request.resource.data.createdAt == request.time
+        && (!("referrer" in request.resource.data) || request.resource.data.referrer == null || (request.resource.data.referrer is string && request.resource.data.referrer.size() <= 500));
+    }
+
+    // Everything else in this database is admin-only, server-side access.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

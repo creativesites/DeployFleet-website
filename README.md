@@ -140,27 +140,24 @@ full hub.
   own architecture docs). The pricing page intentionally shows tiers by
   what's included, not by price, funneling to a conversation instead.
 - **Lead capture** — both forms (`DemoForm` on `/contact`, the homepage
-  `CtaSection`) submit by opening a pre-filled WhatsApp chat client-side. No
-  backend/CRM integration exists yet; that's a deliberate MVP choice
-  (WhatsApp is the channel this audience actually uses), not an oversight.
+  `CtaSection`) still submit by opening a pre-filled WhatsApp chat
+  client-side as the real, primary path, and now *also* persist to
+  Firestore for the admin dashboard — see "Lead capture, gated demo
+  access, and visitor stats" below for the full picture. No CRM beyond
+  this project's own `/admin` exists.
 
-## Planned: gated demo access
+## Gated demo access
 
-**Current behavior:** every "Book a Demo" / "Launch the Live Demo" CTA
-(`LIVE_DEMO_URL` in `src/lib/nav.ts`) links straight to the shared live
-demo instance (`http://199.192.23.46:4169/odoo`), which has one-click
-login for the Owner/Dispatcher/Driver views. No form, no gate — this is a
-deliberate, explicit choice for now, not a gap. a marketing decision 
-
-**Planned, once a lead-capture backend exists:** collect the visitor's
-name/company/phone *first* (the existing `/demo` role cards and copy stay,
-just gated behind a short form), store the lead, *then* redirect to the
-live demo — or to a personalized one-click login link, if the product ever
-supports per-prospect demo instances the way `deployfleet_demo_zm`'s
-generation pattern already suggests is possible. Implementing this is a
-backend/CRM decision (where leads get stored, what "personalized instance"
-means operationally), not just a frontend change — flagged here so it
-isn't rediscovered from scratch later.
+**Implemented** — this section used to describe a planned decision; see
+"Lead capture, gated demo access, and visitor stats" below for what
+actually shipped. `/demo` now collects the visitor's details first via
+`DemoGate.tsx`, *then* reveals `LIVE_DEMO_URL`
+(`http://199.192.23.46:4169/odoo`) — the unlock persists per-browser, so
+a returning visitor isn't asked twice. A personalized one-click login
+link (per-prospect demo instances, the way `deployfleet_demo_zm`'s
+generation pattern suggests is possible) remains a real, separate idea
+this doesn't attempt — everyone unlocking the gate still lands on the
+same shared live demo instance.
 
 ## Intelligence Hub (`/intelligence-hub`)
 
@@ -569,63 +566,136 @@ set-state-in-effect lint violation noted above) is wired into all 3
 country-sensitive calculators, defaulting to Zambia, persisting per-
 browser like every other calculator input in this product.
 
+### Lead capture, gated demo access, and visitor stats (Firebase)
+
+Every form on the site (`/contact`'s `DemoForm`, the homepage `CtaSection`)
+kept its original, always-working WhatsApp-open behavior unchanged, and
+now *additionally* persists a fire-and-forget lead to Firestore
+(`src/lib/leads.ts`) so submissions show up in `/admin` — a strict
+addition, never a replacement; a Firestore write failure never blocks or
+errors the WhatsApp handoff a visitor is relying on. `/demo` implements
+the "Planned: gated demo access" behavior this README used to just flag
+as a future decision: `DemoGate.tsx` shows the lead form first (`source:
+"demo-gate"`), and only reveals `LIVE_DEMO_URL` after a real submission —
+the unlock persists per-browser via `useDemoUnlocked()` (`localStorage`,
+the same `useSyncExternalStore` pattern as `useSelectedCountry`), so a
+returning visitor isn't re-gated. A lightweight `PageviewTracker` (mounted
+once in the root layout) logs one Firestore doc per client-side navigation
+for the admin dashboard's visitor-stats tab — not a replacement for the
+Firebase Analytics `measurementId` the project's own Firebase config
+already carries, just an internal counter simple enough to read straight
+out of the dashboard.
+
+**Security model, not an afterthought:** `firestore.rules` (repo root)
+allows unauthenticated `create` on `leads`/`pageviews` only — field-
+validated (required keys, string-length caps, `status` locked to `"new"`
+on create) — and denies read/update/delete to every client entirely.
+There's no visitor to authenticate against on a marketing form, so the
+write path has to be public; the actual security boundary is that
+validated create-only rule, not the `firebaseConfig` values shipped in
+the client bundle (those are non-secret by Firebase's own design — see
+the comment in `src/lib/firebase.ts` for why hardcoding them as a
+fallback default, the same choice already made for `WHATSAPP_NUMBER` in
+`nav.ts`, is fine). Admin reads/writes (the dashboard, lead-status
+updates) go through `src/lib/firebaseAdmin.ts`'s privileged, server-only
+Admin SDK instead, which bypasses these rules under a service-account
+credential — the two paths never share a permission model.
+
+**This repo cannot deploy `firestore.rules` or create the Firestore
+database itself** — both require your own Firebase account access.
+Before any of this works end-to-end: create the Firestore database
+(Firebase Console → Build → Firestore Database → Create Database — **not
+done yet as of this writing**, confirmed by a direct REST call returning
+`PERMISSION_DENIED`/`SERVICE_DISABLED`, not a network failure — outbound
+HTTPS to `firestore.googleapis.com` from this dev environment works
+fine), then paste `firestore.rules` into the Rules tab and Publish (or
+`firebase deploy --only firestore:rules` with the CLI).
+
 ### Admin dashboard (`/admin`)
 
-A real, working implementation of "admin-editable data," not just the
-file-based `countries.ts` pattern alone — see the plan's §07 for the full
-three-option tradeoff (file-based / lightweight KV / real backend+auth)
-this resolves. Password-gated (`ADMIN_PASSWORD` env var; unset means
-`/admin` shows "not configured" and refuses every login, the same kill-
-switch contract as `AI_FEATURES_ENABLED`), signed httpOnly session
-cookies via Node's built-in `crypto` HMAC (no new auth dependency — Clerk
-stays the confirmed Phase E/F stack for real multi-user accounts; this is
-one shared operator password, not a user system).
+**Auth is now Clerk, not the old shared-password HMAC-cookie gate** — the
+migration this project's own code comments had been flagging as planned
+since the diesel-price editor first shipped. Two independent, both-
+required gates, checked server-side in `src/app/admin/page.tsx` before
+any dashboard content renders:
 
-`src/lib/adminStore.ts` is the actual "Option A progressing to Option C"
-bridge: a `KeyValueStore` interface with an in-memory fallback (works
-everywhere with zero setup, including this dev environment, but honestly
-non-persistent in a real Vercel deployment — the same class of caveat
-already carried by the AI rate limiter's in-memory `Map`) and a real
-Upstash Redis-backed implementation that activates automatically the
-moment `KV_REST_API_URL`/`KV_REST_API_TOKEN` (Vercel's own env var names
-when a Redis/KV integration is attached from the Marketplace) or
-`UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` are present — **no
-code change needed to go from A to C**, only attaching a store in the
-Vercel dashboard. The `/admin` UI itself shows an honest "not persistent
-yet, attach a KV store" banner when running on the fallback, rather than
-implying a durability it doesn't have.
+1. **Clerk** (`src/proxy.ts` — Next.js 16 renamed the Edge Middleware file
+   convention from `middleware.ts` to `proxy.ts`; same `clerkMiddleware()`
+   API) protects every `/admin` route, redirecting a signed-out visitor to
+   Clerk's own hosted Account Portal sign-in — no custom sign-in page was
+   built, since Clerk's default requires zero extra code. Gracefully
+   no-ops (passes every request through untouched) when
+   `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`/`CLERK_SECRET_KEY` aren't set, the
+   same "degrade instead of crash without credentials" contract every
+   other optional integration in this project follows — `clerkMiddleware()`
+   itself throws on missing keys, so this guard is load-bearing, not
+   decorative.
+2. **`ADMIN_ALLOWED_EMAILS`** (`src/lib/adminAccess.ts`) — a signed-in
+   Clerk user isn't automatically trusted with lead/visitor data; this is
+   the second gate Clerk itself doesn't know about. Fails closed: unset
+   means nobody is admitted, not "anyone signed in," matching the old
+   password gate's own `isAdminConfigured()` discipline exactly.
 
-**Only diesel price is editable through the UI today** — the one figure
-genuinely volatile enough to need updating without a code deploy (both
-Zambia's and Zimbabwe's own sourced notes flag it as reviewed monthly/
-fortnightly). Tax bands, tolls, and social security rates stay in the
-reviewed-PR path in `countries.ts` — a from-scratch nested-object form
-editor for those wasn't built in this round, named explicitly as the next
-increment rather than silently out of scope. `useSelectedCountry` fetches
-`/api/diesel-price` (public `GET`; only the `PUT` is session-gated) once
-per page visit and merges any admin override over the static sourced
-default, so every country-aware calculator picks up an admin edit with
-zero per-calculator wiring. Verified end-to-end in a real browser: wrong
-password rejected, correct login succeeds, a Zambia diesel-price edit
-persists through the store and immediately appears on Cost Per Kilometre
-with correct source attribution, logout clears the session. See
-`.env.example` for `ADMIN_PASSWORD`/`ADMIN_SESSION_SECRET`/
-`KV_REST_API_URL`/`KV_REST_API_TOKEN`.
+`src/lib/firebaseAdmin.ts` is the third piece — server-only, privileged
+Firestore access via a Firebase service account
+(`FIREBASE_ADMIN_PROJECT_ID`/`FIREBASE_ADMIN_CLIENT_EMAIL`/
+`FIREBASE_ADMIN_PRIVATE_KEY`), independent of Clerk entirely (Clerk
+proves identity; the Admin SDK is a separate, unrelated credential for
+data access — no Clerk↔Firebase token-exchange integration was needed
+or built). Missing this only degrades the Overview/Leads tabs to a clean
+"not configured" message; Clerk auth and the Diesel Prices tab (still on
+`adminStore.ts`'s Upstash-Redis-backed store, untouched by this round)
+work independently of it.
 
-**Both items originally listed here as open — rolling the Control Panel
+**Three tabs**, all in `src/components/admin/`:
+- **Overview** — pageview counts (all-time, last 7/30 days, unique
+  visitors via a locally-generated `localStorage` id, no cookies or
+  fingerprinting), leads-by-pipeline-status counts, and a top-10-pages
+  table. `/api/admin/stats` computes this with Firestore's own `.count()`
+  aggregation queries for the cheap totals and a single bounded
+  (5,000-doc) fetch of the last 30 days' pageviews for the detail that
+  actually needs the raw docs (unique visitors, per-path counts) —
+  deliberately not a `.where().orderBy()` composite-index query, which
+  would need a manual index created in the Firebase console first.
+- **Leads** — every lead from all 3 sources (Contact form, homepage CTA,
+  demo gate), filterable by source, each with a real pipeline-status
+  dropdown (`new` → `contacted` → `demo-booked` → `customer`/`lost`,
+  `src/lib/leadTypes.ts`) that `PATCH`es `/api/admin/leads` — this is the
+  concrete interpretation of "leads and sales" the dashboard implements:
+  a status field per lead, not a separate deals/revenue data model, since
+  nothing else in this marketing site (no billing, no CRM) gives a "sale"
+  any other meaning yet.
+- **Diesel Prices** — unchanged from before, just re-gated: same
+  `adminStore.ts` A-to-C Upstash bridge, same UI, only the auth check on
+  `PUT /api/diesel-price` swapped from the old session cookie to
+  `requireAdmin()`.
+
+`src/lib/leadTypes.ts` exists specifically so `LeadSource`/`LeadStatus`
+can be imported by both the client forms (`leads.ts`, which also pulls in
+the client Firebase app) and the server route handlers (which use the
+Admin SDK instead) without either side accidentally initializing the
+wrong SDK.
+
+**Both items previously listed here as open — rolling the Control Panel
 component set to the other 9 calculators, and researching/populating
-South Africa/Botswana/Namibia/Mozambique's tax/toll/diesel data — are now
+South Africa/Botswana/Namibia/Mozambique's tax/toll/diesel data — are
 done** (see "Experience Layer" and "Multi-country support" above).
 **Genuinely still open, not blocking:** confirming whether the harmonized
-axle-load limits already sourced for Load Optimisation actually apply
-as-is to South Africa (which runs its own National Road Traffic Act / TRH
-11 limits) and Namibia, rather than assuming the Tripartite framework
-covers all 6 countries uniformly — `AXLE_LOAD_LIMITS` in `benchmarks.ts`
-is still one shared, Zambia-sourced set of limits used for every country
-on the Load Optimisation calculator, not yet split per-country; and
-extending the admin dashboard's editable fields beyond diesel price (tax
-bands, tolls, and social security rates for all 6 countries now live in
-`countries.ts`, edited via a reviewed PR).
+axle-load limits sourced for Load Optimisation actually apply as-is to
+South Africa and Namibia rather than assuming uniform Tripartite coverage
+(`AXLE_LOAD_LIMITS` in `benchmarks.ts` is still one shared, Zambia-sourced
+set used for every country); creating the Firestore database and
+deploying `firestore.rules` (see above — needs your Firebase account,
+not something this repo can do alone); creating the actual Clerk
+application and generating a Firebase service account (same reason); and
+verified end-to-end in a real browser only up to the point this dev
+environment's missing credentials allow — the `/admin` "not configured"
+gate, the `/demo` gate's full lock→submit→unlock→persist-across-reload
+cycle, and a real Firestore write's request reaching
+`firestore.googleapis.com` (confirmed via direct HTTPS reachability, not
+assumed) are all confirmed; a real Clerk sign-in and a real Firestore
+write actually succeeding are not, since neither is possible without
+credentials only you can generate.
 
 ## Messaging guardrails
 
