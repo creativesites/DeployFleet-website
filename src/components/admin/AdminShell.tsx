@@ -29,6 +29,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/team", label: "Team", group: "CRM" },
   { href: "/admin/inbox", label: "AI Inbox", group: "CRM" },
   { href: "/admin/decisions", label: "Decisions", group: "CRM" },
+  { href: "/admin/activity", label: "Activity", group: "CRM" },
   { href: "/admin", label: "Overview", group: "Analytics" },
   { href: "/admin/leads", label: "Leads", group: "Analytics" },
   { href: "/admin/visitors", label: "Visitors", group: "Analytics" },

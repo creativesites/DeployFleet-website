@@ -8,6 +8,7 @@ import {
   type InboxSourceType,
   type Prospect,
 } from "@/lib/crmTypes";
+import ChatInput from "./ChatInput";
 
 /**
  * Phase 1 §7.1 — the AI Inbox's "paste everything" box. Shared across
@@ -175,16 +176,18 @@ export default function InboxPasteBox({ relatedProspectId, relatedEmployeeId, de
           </select>
         </div>
       )}
-      <textarea
+      <ChatInput
         value={rawText}
-        onChange={(e) => setRawText(e.target.value)}
-        rows={4}
+        onChange={setRawText}
         placeholder="Paste a conversation, call transcript, WhatsApp export, or your own note…"
-        className="w-full rounded-df-md border border-border bg-canvas px-3 py-2 text-sm text-navy outline-none focus:border-teal"
+        disabled={submitting}
+        minRows={2}
+        maxRows={14}
+        onSubmit={submit}
+        submitDisabled={submitting || !rawText.trim()}
+        submitLabel="Process with AI"
       />
-      <button type="button" onClick={submit} disabled={submitting || !rawText.trim()} className="btn-primary mt-2 text-sm disabled:opacity-50">
-        {submitting ? "Processing…" : "Process with AI"}
-      </button>
+      {submitting && <p className="mt-1.5 text-xs text-muted">Processing…</p>}
       {error && <p className="mt-2 text-xs text-danger">Couldn&apos;t process this entry ({error}).</p>}
 
       {entry && !result && (

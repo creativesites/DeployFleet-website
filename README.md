@@ -995,6 +995,132 @@ as Phase 0 and every route built since. `npx tsc --noEmit`, `eslint`,
 engines, so no new unit-test surface), and `next build` (all new routes
 registered correctly) all pass.
 
+### Phase 2 — the orchestration layer
+
+Built in the doc's own dependency order (§11):
+
+1. **Tool-calling in the AI router** (§5.4) — `src/lib/ai/providers/types.ts`
+   gained `ToolDefinition`/`ToolCall`/`AiToolTurnRequest`/`AiToolTurnResult`
+   types and an `AiToolCallingAdapter` interface, implemented separately per
+   provider since DeepSeek's OpenAI-compatible `tools`/`tool_calls` shape
+   and Gemini's own `functionDeclarations`/`functionCall`/
+   `functionResponse` shape are genuinely different, not a shared
+   abstraction. `router.ts`'s new `pickToolAdapter()` picks the first
+   configured provider — unlike the plain-completion router, a
+   tool-calling exchange can't fall back mid-conversation once started
+   (the two providers' message formats aren't interchangeable). Neither
+   adapter's tool-calling path is verified against a live call — no API
+   key in this dev environment, same standing caveat as every AI
+   integration in this project.
+2. **The AI Orchestrator** (§8.1, `src/lib/ai/orchestrator.ts`) — the
+   first genuinely agentic component in this codebase. A bounded,
+   at-most-2-round exchange: one round the model may call tools, one
+   forced-final round with tools withheld so a misbehaving model can't
+   loop forever. An 11-tool fixed registry (`create_task`, `update_task`,
+   `complete_task`, `create_prospect`, `update_prospect`,
+   `create_decision`, `supersede_decision`, `request_ai_employee_report`,
+   `flag_stale_information`, `generate_daily_brief`,
+   `generate_pipeline_report`) — a hand-written dict keyed by name, never
+   dynamic dispatch off an LLM-supplied string.
+3. **Approval/autonomy levels** (§8.2) — folded directly into the
+   registry rather than a separate mechanism, since each tool's level is
+   fixed metadata on its own entry. **Every write-capable tool defaults
+   to Level 0** ("propose, Winston approves") — matching the
+   architecture doc's own explicit default, "everything in Phase 2 until
+   proven safe," not just Level 1's narrower "notes/timestamps" carve-out.
+   Calling a write tool never touches Firestore; it returns a structured
+   proposal (tool name + args + a human-readable description) the
+   Command Center renders as an Approve card, which — when clicked —
+   calls the exact same existing CRUD routes every other UI in this
+   project already uses (`POST /api/admin/crm/tasks`,
+   `PATCH .../prospects/[id]`, etc.) — no new "apply an orchestrator
+   proposal" route needed, mirroring the AI Inbox's own propose-then-apply
+   pattern. The three read-only tools (`flag_stale_information` — a
+   single-prospect staleness check that does write `AuditEvent`s, closer
+   in spirit to Level 1's "activity logs" category; `generate_daily_brief`;
+   `generate_pipeline_report`) execute immediately since they mutate
+   nothing else. One hard floor regardless of any future level change:
+   an `update_prospect` proposal carrying a stage of 5+ ("Qualified
+   Opportunity" or later) is never one-click-approvable in the Command
+   Center UI — it's shown as "review directly on the prospect page"
+   instead, matching §8.2's own Level 4 ("stage changes past Qualified…
+   Always — never auto-approved").
+4. **System State** (§8.3, `src/lib/ai/systemState.ts`) — not a new
+   Firestore collection, a computed-and-cached summary: the active
+   campaign's live scoreboard, today's attempts/meaningful vs. target,
+   overdue-prospect count, a heuristic "biggest bottleneck" (behind-pace
+   attempts, else overdue prospects, else none), the top prospect by
+   `opportunityScore`, and the most common `riskFlag` across active
+   prospects. **One disclosed deviation from the doc's literal wording**:
+   cached with a flat 15-minute TTL rather than event-driven invalidation
+   on "the same triggers as GLOBAL_CONTEXT" — computing it already joins
+   three collections, and wiring surgical invalidation into every one of
+   those write paths for a summary that's read, not acted on precisely,
+   was judged not worth the complexity here.
+5. **The AI Command Center** (§8.4) — `/admin` evolves, not a new route,
+   exactly as specified. Rather than replace the existing Overview page's
+   real pageview/lead stats (Visitor Intelligence 2.0 data, still useful,
+   nothing in the doc says to remove it), the new `CommandCenter.tsx`
+   renders **above** those stats: four tiles (attempts today vs. target,
+   prospects needing attention, overdue next actions, AI workforce
+   awaiting a report — the last computed by joining the employee list
+   against the AI Inbox's own entries, flagging anyone active with no
+   entry in 7+ days), a bottleneck banner when one's flagged, a top-3
+   actions list (deterministic, built from the same data — no AI call for
+   arithmetic), and the "what should I do right now?" prompt box calling
+   the Orchestrator directly, rendering its answer, a tool-call
+   transparency log, and any proposal Approve cards inline.
+6. **System-wide activity feed** (§8.5, `/admin/activity`) — a flat,
+   actor-filterable, chronological read of `AuditEvent`, the collection
+   every prior phase has already been writing to since Phase 1.
+
+**The Gemini-style chat composer, at explicit user request**
+(`src/components/admin/ChatInput.tsx`) — a shared input used by both the
+Command Center's prompt box and (retrofitted) the AI Inbox's paste box:
+auto-grows with content via a `scrollHeight`-driven `useLayoutEffect` up
+to a max, then scrolls internally; settles into a compact, fully-rounded
+"minimized" pill when idle and empty, expanding back to the full
+multi-line composer on focus (a spring-animated `border-radius` via
+`framer-motion`, already a project dependency) — which on a touchscreen
+*is* the focus event, so "expand on touch" needs no separate touch
+handling. Enter submits, Shift+Enter inserts a newline, matching the
+chat-app convention the request referenced.
+
+**Not yet verified in a live signed-in browser** — same standing
+caveat as every phase before it, and the highest-priority thing to
+click-test first given this phase's size: the chat composer's
+grow/collapse feel is exactly the kind of interaction that reads
+differently on a screen than in code, and the Orchestrator's tool-calling
+path has zero live-provider verification behind it (no API key in this
+dev environment). `npx tsc --noEmit`, `eslint`, `vitest` (139 tests,
+unchanged — Phase 2 is also CRUD/routes/UI plus provider-integration
+code, not new pure calculation engines), and `next build` (all new
+routes registered correctly) all pass.
+
+**Genuinely still open, not blocking:** Phase 3 (the anti-procrastination
+engine — morning brief, midday nudge, end-of-day review, procrastination-
+pattern detection), which the doc itself gates on the Orchestrator and
+System State being in real daily use first; flipping any tool above
+autonomy Level 0 once it's been observed being proposed correctly for a
+while; and the `emailSends` collection / 20-per-day cap / actual send
+route from the EmailJS setup below, which is account/template-ready but
+not wired to a send button yet.
+
+### EmailJS — outbound email (account/templates ready, send button not built)
+
+[`docs/email-templates.md`](docs/email-templates.md) has the full setup:
+the EmailJS env vars to add in Vercel
+(`NEXT_PUBLIC_EMAILJS_PUBLIC_KEY`/`_SERVICE_ID`/
+`_TEMPLATE_COLD_OUTREACH`/`_TEMPLATE_FOLLOWUP`, all in `.env.example`,
+all safe to expose client-side per EmailJS's own origin-restriction
+security model) and the actual template copy — a Cold Outreach and a
+Follow-up template, written to this site's own Messaging guardrails
+(no "Odoo"/"ERP," no fixed pricing, no unproven claims) — to paste into
+the EmailJS dashboard. The `emailSends` collection, the server-side
+20/day cap, and `POST /api/admin/crm/email/send` itself are **not**
+built yet — this only gets the account side ready for when that's asked
+for explicitly.
+
 ### Admin dashboard (`/admin`)
 
 **Redesigned as a sidebar-navigated app, not a single route with
@@ -1054,7 +1180,7 @@ tabs to a clean "not configured" message; Clerk auth and the Diesel Prices
 tab (still on `adminStore.ts`'s Upstash-Redis-backed store, untouched by
 this round) work independently of it.
 
-**Eighteen routes**, grouped in the sidebar as CRM / Analytics / Marketing /
+**Nineteen routes**, grouped in the sidebar as CRM / Analytics / Marketing /
 Intelligence / Settings, each a thin `page.tsx` (in `src/app/admin/*`)
 around a client Tab component (in `src/components/admin/`) that does the
 actual data fetching. CRM leads the group order — DeployFleet's own
@@ -1077,6 +1203,7 @@ above):**
 - **AI Inbox** (`/admin/inbox`) — "paste everything" — see the
   AI-native Marketing OS section above.
 - **Decisions** (`/admin/decisions`) — the Decision Ledger.
+- **Activity** (`/admin/activity`) — the system-wide `AuditEvent` feed.
 
 **Analytics:**
 - **Overview** (`/admin`) — pageview counts (all-time, last 7/30 days,

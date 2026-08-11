@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import CommandCenter from "./CommandCenter";
 
 type Stats = {
   pageviews: {
@@ -73,6 +74,8 @@ export default function OverviewTab({ firebaseAdminConfigured }: { firebaseAdmin
 
   return (
     <div className="space-y-8">
+      <CommandCenter firebaseAdminConfigured={firebaseAdminConfigured} />
+
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {cards.map((c) => (
           <div key={c.label} className="card-surface p-5">
