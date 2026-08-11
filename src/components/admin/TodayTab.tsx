@@ -207,6 +207,11 @@ function ProspectCard({ prospect, onLogged }: { prospect: Prospect; onLogged: (i
             WhatsApp
           </a>
         )}
+        {prospect.contactEmail && (
+          <Link href={`/admin/prospects/${prospect.id}`} className="btn-secondary text-sm">
+            Email
+          </Link>
+        )}
       </div>
 
       {/* Outcome */}

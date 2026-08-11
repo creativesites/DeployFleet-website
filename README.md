@@ -1167,20 +1167,45 @@ real clock: the three touchpoints only render past specific hours
 this dev environment can exercise end-to-end. `npx tsc --noEmit`,
 `eslint`, `vitest` (139 tests, unchanged), and `next build` all pass.
 
-### EmailJS — outbound email (account/templates ready, send button not built)
+### EmailJS — outbound email, send button built
 
-[`docs/email-templates.md`](docs/email-templates.md) has the full setup:
-the EmailJS env vars to add in Vercel
-(`NEXT_PUBLIC_EMAILJS_PUBLIC_KEY`/`_SERVICE_ID`/
-`_TEMPLATE_COLD_OUTREACH`/`_TEMPLATE_FOLLOWUP`, all in `.env.example`,
-all safe to expose client-side per EmailJS's own origin-restriction
-security model) and the actual template copy — a Cold Outreach and a
-Follow-up template, written to this site's own Messaging guardrails
-(no "Odoo"/"ERP," no fixed pricing, no unproven claims) — to paste into
-the EmailJS dashboard. The `emailSends` collection, the server-side
-20/day cap, and `POST /api/admin/crm/email/send` itself are **not**
-built yet — this only gets the account side ready for when that's asked
-for explicitly.
+[`docs/email-templates.md`](docs/email-templates.md) has the full setup
+(env vars, the two template contents to paste into the EmailJS
+dashboard) and the send feature's own writeup. Short version: every
+prospect page (`/admin/prospects/[id]`, Overview tab) has a
+`SendEmailPanel` — pick Cold Outreach or Follow-up, send — and the Today
+tab links each prospect with an email on file straight to it.
+`POST /api/admin/crm/email/send` does everything in one request: checks
+the 20/day cap (`countEmailSendsToday()` in `crm.ts`, counting only
+successful sends so a transient EmailJS outage doesn't cost part of the
+day's allowance), calls EmailJS, and on success logs an `Interaction`
+(type `email`, so `lastContactDate` updates like any other real touch)
+and an `email_sent` `AuditEvent`. Every attempt — sent or failed — is
+recorded in a new `emailSends` collection.
+
+**One deliberate deviation from the architecture doc's own literal
+wording** ("a route wrapping EmailJS's *client* SDK"): the send call
+itself happens **server-side**
+(`src/lib/email/emailjs.ts`, plain `fetch` to EmailJS's REST endpoint),
+not via their browser SDK. EmailJS's send endpoint is just an HTTP POST
+— nothing about it requires a browser — and doing it server-side is
+what makes the 20/day cap a *real* limit rather than a client-trusted
+one: if the browser held the public key and made the EmailJS call
+itself, a modified client could call EmailJS directly and skip this
+app's cap check entirely. This needs one more secret beyond the four
+`NEXT_PUBLIC_` values already documented — `EMAILJS_PRIVATE_KEY`
+(EmailJS Account → Security), required as an `accessToken` so EmailJS
+accepts a send call that isn't coming from a browser it recognizes.
+Also new: optional `EMAIL_SENDER_NAME`/`EMAIL_SENDER_ROLE`/
+`EMAIL_REPLY_TO` env vars for the templates' own signature merge tags,
+defaulting to "Winston"/"DeployFleet" if unset.
+
+**Genuinely still open:** the 20/day cap resets at UTC midnight, not
+Zambia local midnight (~2h off from CAT) — disclosed, not worth
+timezone-aware date math for a personal daily cap; no campaign-level
+send-reporting UI yet, though `EmailSend` rows do carry `campaignId`;
+and no unsubscribe/opt-out mechanism, appropriate at this tool's actual
+scale (20/day, personal outreach) but worth adding before that changes.
 
 ### Admin dashboard (`/admin`)
 

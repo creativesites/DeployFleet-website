@@ -15,6 +15,9 @@ import type {
   Decision,
   DecisionScope,
   DecisionStatus,
+  EmailSend,
+  EmailSendStatus,
+  EmailTemplateKey,
   Fact,
   FactLifecycleStatus,
   FactType,
@@ -58,6 +61,10 @@ const DECISIONS = "decisions";
 const AI_EMPLOYEES = "aiEmployees";
 const AUDIT_EVENTS = "auditEvents";
 const INBOX_ENTRIES = "inboxEntries";
+const EMAIL_SENDS = "emailSends";
+
+/** The Sales Playbook's own "up to 20 a day" cap (Winston's explicit instruction, see docs/ai-marketing-os-architecture.md §12) — enforced here, server-side, never trusted to the client. */
+export const DAILY_EMAIL_CAP = 20;
 
 /** Phase 0 §6.2's Weekly Targets — the Sales Playbook's own "10 attempts, 5 meaningful interactions" daily benchmark. A tunable constant, not a database-backed setting, same "not worth the complexity yet" choice Visitor Intelligence's scoring.ts already made for its own weight tables. */
 const TARGET_ATTEMPTS_PER_DAY = 10;
@@ -1164,4 +1171,75 @@ export async function seedAiEmployees(): Promise<{ created: number; skipped: num
     created++;
   }
   return { created, skipped };
+}
+
+function emailSendFromDoc(doc: DocumentSnapshot): EmailSend {
+  const d = doc.data() ?? {};
+  return {
+    id: doc.id,
+    prospectId: (d.prospectId as string) ?? "",
+    recipientEmail: (d.recipientEmail as string) ?? "",
+    template: (d.template as EmailTemplateKey) ?? "cold_outreach",
+    campaignId: (d.campaignId as string) ?? null,
+    status: (d.status as EmailSendStatus) ?? "failed",
+    errorMessage: (d.errorMessage as string) ?? null,
+    sentAt: tsToIso(d.sentAt) ?? new Date(0).toISOString(),
+    createdAt: tsToIso(d.createdAt) ?? new Date(0).toISOString(),
+  };
+}
+
+export interface CreateEmailSendInput {
+  prospectId: string;
+  recipientEmail: string;
+  template: EmailTemplateKey;
+  campaignId?: string | null;
+  status: EmailSendStatus;
+  errorMessage?: string | null;
+}
+
+export async function createEmailSend(input: CreateEmailSendInput): Promise<EmailSend> {
+  const db = getAdminFirestore();
+  const now = FieldValue.serverTimestamp();
+  const ref = await db.collection(EMAIL_SENDS).add({
+    prospectId: input.prospectId,
+    recipientEmail: input.recipientEmail,
+    template: input.template,
+    campaignId: input.campaignId ?? null,
+    status: input.status,
+    errorMessage: input.errorMessage ?? null,
+    sentAt: now,
+    createdAt: now,
+  });
+  const doc = await ref.get();
+  return emailSendFromDoc(doc);
+}
+
+export interface ListEmailSendsFilters {
+  prospectId?: string;
+  limit?: number;
+}
+
+export async function listEmailSends(filters: ListEmailSendsFilters = {}): Promise<EmailSend[]> {
+  const db = getAdminFirestore();
+  const snapshot = await db
+    .collection(EMAIL_SENDS)
+    .orderBy("createdAt", "desc")
+    .limit(filters.limit ?? 2000)
+    .get();
+  let sends = snapshot.docs.map(emailSendFromDoc);
+  if (filters.prospectId) sends = sends.filter((s) => s.prospectId === filters.prospectId);
+  return sends;
+}
+
+/**
+ * The 20/day cap's own counter — only "sent" sends count against it
+ * (a failed EmailJS call, e.g. a transient outage, shouldn't cost
+ * Winston part of his daily allowance). Bounded fetch (2000, matching
+ * every other "fetch broadly, filter in memory" query in this file) —
+ * fine at this system's real scale of at most 20 new rows a day.
+ */
+export async function countEmailSendsToday(): Promise<number> {
+  const sends = await listEmailSends({ limit: 2000 });
+  const today = new Date().toISOString().slice(0, 10);
+  return sends.filter((s) => s.status === "sent" && s.createdAt.slice(0, 10) === today).length;
 }

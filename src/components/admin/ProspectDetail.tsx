@@ -14,6 +14,7 @@ import {
   type Prospect,
 } from "@/lib/crmTypes";
 import InboxPasteBox from "./InboxPasteBox";
+import SendEmailPanel from "./SendEmailPanel";
 
 type TabKey = "overview" | "intelligence" | "employees" | "interactions" | "timeline";
 
@@ -244,6 +245,7 @@ export default function ProspectDetail({ id }: { id: string }) {
 
       <div className="mt-4">
         {tab === "overview" && (
+          <div className="space-y-4">
           <div className="card-surface space-y-2 p-4 text-sm">
             {prospect.contactName && (
               <p>
@@ -293,6 +295,9 @@ export default function ProspectDetail({ id }: { id: string }) {
                 </p>
               </div>
             )}
+          </div>
+
+          <SendEmailPanel prospect={prospect} onSent={loadProspect} />
           </div>
         )}
 

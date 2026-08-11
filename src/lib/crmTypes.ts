@@ -391,7 +391,8 @@ export type AuditEventType =
   | "prospect_updated"
   | "reconciliation_flag_raised"
   | "ai_brief_generated"
-  | "inbox_entry_processed";
+  | "inbox_entry_processed"
+  | "email_sent";
 
 export type AuditEventActor = "winston" | "ai_orchestrator" | "ai_reconciliation" | "ai_inbox_extraction";
 
@@ -436,4 +437,30 @@ export interface Interaction {
   } | null;
   createdAt: string;
   createdBy: string;
+}
+
+/**
+ * The outbound half of the email channel (docs/email-templates.md) —
+ * one row per send attempt, whether it succeeded or not, so the 20/day
+ * cap (enforced server-side, never trusted to the client) can be counted
+ * accurately and a failed send is still visible in a prospect's history.
+ */
+export type EmailTemplateKey = "cold_outreach" | "followup";
+export type EmailSendStatus = "sent" | "failed";
+
+export const EMAIL_TEMPLATE_LABEL: Record<EmailTemplateKey, string> = {
+  cold_outreach: "Cold Outreach",
+  followup: "Follow-up",
+};
+
+export interface EmailSend {
+  id: string;
+  prospectId: string;
+  recipientEmail: string;
+  template: EmailTemplateKey;
+  campaignId: string | null;
+  status: EmailSendStatus;
+  errorMessage: string | null;
+  sentAt: string;
+  createdAt: string;
 }
