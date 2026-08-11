@@ -810,8 +810,8 @@ transcribed verbatim from the CSV the user provided, seeded idempotently
 by company name via `seedProspectsFromCsv()`) starts instead, since
 nobody's attempted contact with those yet.
 
-**Two screens**, both new nav items under the sidebar's CRM group
-(ahead of Analytics — see "Admin dashboard" below):
+**Five screens**, all nav items under the sidebar's CRM group (ahead of
+Analytics — see "Admin dashboard" below):
 - **Today** (`/admin/today`) — Winston's actual daily queue: prospects
   due today or overdue, oldest first. Each card shows the AI brief (or
   a "Prepare Me" button if none exists yet), a website-engagement badge
@@ -827,47 +827,79 @@ nobody's attempted contact with those yet.
   planning pass scoped and never built until now.
 - **Prospects** (`/admin/prospects`) — the full pipeline, filterable by
   stage/source, expand-to-see-everything (facts, phone classification,
-  AI brief, linked visitor snapshot, full interaction history), and the
-  "Seed outbound list + sync leads" trigger button.
+  AI brief, linked visitor snapshot, full interaction history), the
+  "Seed outbound list + sync leads" trigger button, and (Phase 0, new)
+  an "Add prospect" form for manually entering a prospect that didn't
+  come from the CSV seed or a promoted lead — reuses the same
+  `computePhoneClassification()` helper as the other two creation
+  paths, tagged `flags: ["manual-entry"]` for provenance.
+- **Pipeline** (`/admin/pipeline`, Phase 0, new) — the brief's own
+  Kanban board: a horizontal-scroll, stage-by-stage column layout (all
+  13 stages, 0 Unqualified through 12 Nurture). Tap-to-move via a
+  per-card "Move to..." select rather than drag-and-drop — a deliberate
+  mobile-first choice, since Winston works this from a phone as often
+  as a desktop and HTML5 drag-and-drop has poor touch support (the same
+  reasoning the DeployFleet Odoo sibling project already settled for
+  its own Dispatch Board).
+- **Targets** (`/admin/targets`, Phase 0, new) — the Sales Playbook's
+  own "10 attempts, 5 meaningful interactions" daily benchmark, tracked
+  as a real weekly scoreboard: a Monday-start week selector, day-by-day
+  attempt/meaningful-interaction counts against the target (green when
+  met), and weekly totals. `getWeeklyScoreboard()`
+  (`src/lib/crm.ts`) computes this from a single bounded fetch of the
+  `interactions` collection, filtered in-memory by date range — no
+  Firestore composite index, consistent with this project's
+  index-avoidance discipline everywhere else.
+- **Outreach** (`/admin/outreach`, Phase 0, new) — campaign tracking as
+  its own entity (the brief's "DeployFleet — Today's 10" example, made
+  real instead of an implicit daily habit): create a `Campaign`
+  (name/start-end dates/optional attempt and meaningful-interaction
+  targets), assign unassigned prospects to it via a checkbox list, and
+  see a real per-campaign scoreboard (`getCampaignScoreboard()`) —
+  prospect count, attempts, and meaningful interactions, computed by
+  joining the campaign's prospect ids against the same bounded
+  `interactions` fetch Targets uses. Named "Outreach" in the UI
+  specifically to avoid colliding with the separate, unrelated Visitor
+  Intelligence `/admin/campaigns` route (website traffic channels).
 
-**Deliberately not built, per the original vertical-slice-first
-agreement:** a Pipeline/Kanban board view, a Targets/weekly-scoreboard
-screen against the Operating Rhythm brief's benchmarks, a separate
-`aiJobs` observability collection (the two AI round-trips aren't logged
-anywhere beyond their effect on the prospect record), campaign tracking
-("DeployFleet — Today's 10" as a real entity), a Sales Coach call-
-analysis feature, and a manual "add prospect" form (every prospect today
-comes from either the CSV seed or a promoted lead). All from the
-brief's own P1 backlog, not the P0 vertical slice — worth returning to
-once the core loop above has been used for real. **Not verified in a
+**Deliberately not built yet, per Phase 1+ of the architecture doc
+below:** a separate `aiJobs` observability collection (the two AI
+round-trips aren't logged anywhere beyond their effect on the prospect
+record) and a Sales Coach call-analysis feature. **Not verified in a
 live signed-in browser**, same standing caveat as the redesign above —
 routing/auth-gating confirmed via curl (`/admin/today`'s first hit 404s
 in Next.js dev mode before Turbopack compiles it on-demand, a real dev-
 mode quirk, not a bug — the very next request correctly 307s to sign-in,
 and the production build lists the route correctly).
 
-**This CRM is the foundation for a much bigger next step, planned but
-not yet built:** [`docs/ai-marketing-os-architecture.md`](docs/ai-marketing-os-architecture.md)
-is a full architecture document for turning it into an AI-native
-Marketing OS — an AI Inbox for pasting AI-workforce conversations that
-self-extracts facts/tasks/decisions, dedicated per-prospect intelligence
-pages with per-employee tabs, an AI Workforce Team page, a Decision audit
-trail, a Reality/Reconciliation engine for stale-data detection, a
-layered context-cache architecture (reusing the Upstash Redis already
-connected for diesel prices), and — once that foundation is solid — an
-AI Orchestrator with real tool-calling and an anti-procrastination
-layer. Explicitly phased (Phase 0 quick CRM-completeness wins through
-Phase 3), grounded against what actually exists in this codebase today,
-not implemented yet — read it before starting any of that work.
+**This CRM is the foundation for a much bigger next step: an AI-native
+Marketing OS**, per [`docs/ai-marketing-os-architecture.md`](docs/ai-marketing-os-architecture.md)
+— an AI Inbox for pasting AI-workforce conversations that self-extracts
+facts/tasks/decisions, dedicated per-prospect intelligence pages with
+per-employee tabs, an AI Workforce Team page, a Decision audit trail, a
+Reality/Reconciliation engine for stale-data detection, a layered
+context-cache architecture (reusing the Upstash Redis already connected
+for diesel prices), and — once that foundation is solid — an AI
+Orchestrator with real tool-calling and an anti-procrastination layer.
+**Phase 0 (the quick CRM-completeness wins — Pipeline/Kanban, Targets,
+Outreach, the manual add-prospect form, all documented above — plus
+resolving the outbound-automation open question: email-only via
+EmailJS, capped at 20/day, no call automation, inbound stays entirely
+human-mediated) is now complete.** Phase 1 (AI Inbox, Prospect
+Intelligence pages, the Team page, the Decision audit trail, the
+Reality/Reconciliation engine, the Context Compiler/cache) is next —
+read the doc before starting any of that work.
 
 ### Admin dashboard (`/admin`)
 
 **Redesigned as a sidebar-navigated app, not a single route with
 client-side tabs** — at explicit user direction ("Vercel like ... not
 tabs ... mobile first"). Every former tab is now a real route under
-`/admin/*` (`/admin`, `/admin/leads`, `/admin/visitors`,
-`/admin/geography`, `/admin/content`, `/admin/campaigns`,
-`/admin/realtime`, `/admin/insights`, `/admin/diesel-prices`) — the URL
+`/admin/*` (`/admin`, `/admin/today`, `/admin/prospects`,
+`/admin/pipeline`, `/admin/targets`, `/admin/outreach`, `/admin/leads`,
+`/admin/visitors`, `/admin/geography`, `/admin/content`,
+`/admin/campaigns`, `/admin/realtime`, `/admin/insights`,
+`/admin/diesel-prices`) — the URL
 now reflects what's on screen (bookmarkable, shareable, correct
 back-button behavior), which a single route with `useState` tab
 selection could never do. `src/app/admin/layout.tsx` does the two-gate
@@ -915,7 +947,7 @@ tabs to a clean "not configured" message; Clerk auth and the Diesel Prices
 tab (still on `adminStore.ts`'s Upstash-Redis-backed store, untouched by
 this round) work independently of it.
 
-**Eleven routes**, grouped in the sidebar as CRM / Analytics / Marketing /
+**Fourteen routes**, grouped in the sidebar as CRM / Analytics / Marketing /
 Intelligence / Settings, each a thin `page.tsx` (in `src/app/admin/*`)
 around a client Tab component (in `src/components/admin/`) that does the
 actual data fetching. CRM leads the group order — DeployFleet's own
@@ -925,7 +957,13 @@ ahead of the website-visitor analytics below it.
 **CRM (DeployFleet's own team, not website visitors — see the section
 above):**
 - **Today** (`/admin/today`) — Winston's daily queue.
-- **Prospects** (`/admin/prospects`) — the full pipeline, browse/seed/sync.
+- **Prospects** (`/admin/prospects`) — the full pipeline, browse/seed/sync/
+  add.
+- **Pipeline** (`/admin/pipeline`) — the Kanban stage board.
+- **Targets** (`/admin/targets`) — the weekly attempts/meaningful-
+  interactions scoreboard.
+- **Outreach** (`/admin/outreach`) — campaign creation, prospect
+  assignment, per-campaign scoreboard.
 
 **Analytics:**
 - **Overview** (`/admin`) — pageview counts (all-time, last 7/30 days,

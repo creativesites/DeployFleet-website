@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   INTERACTION_OUTCOME_LABEL,
   INTERACTION_TYPE_LABEL,
@@ -13,6 +13,19 @@ import {
   type ProspectSource,
 } from "@/lib/crmTypes";
 
+const EMPTY_FORM = {
+  name: "",
+  contactName: "",
+  contactRole: "",
+  contactPhone: "",
+  contactWhatsapp: "",
+  contactEmail: "",
+  location: "",
+  estimatedFleetSizeRaw: "",
+  primaryPainRaw: "",
+  source: "other" as ProspectSource,
+};
+
 export default function ProspectsTab({ firebaseAdminConfigured }: { firebaseAdminConfigured: boolean }) {
   const [prospects, setProspects] = useState<Prospect[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +35,12 @@ export default function ProspectsTab({ firebaseAdminConfigured }: { firebaseAdmi
   const [interactions, setInteractions] = useState<Interaction[] | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!firebaseAdminConfigured) return;
@@ -42,7 +61,39 @@ export default function ProspectsTab({ firebaseAdminConfigured }: { firebaseAdmi
     return () => {
       cancelled = true;
     };
-  }, [firebaseAdminConfigured, stageFilter, sourceFilter]);
+  }, [firebaseAdminConfigured, stageFilter, sourceFilter, refreshKey]);
+
+  async function createProspect(e: FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    setCreating(true);
+    setCreateError(null);
+    const res = await fetch("/api/admin/crm/prospects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: form.name.trim(),
+        contactName: form.contactName || null,
+        contactRole: form.contactRole || null,
+        contactPhone: form.contactPhone || null,
+        contactWhatsapp: form.contactWhatsapp || null,
+        contactEmail: form.contactEmail || null,
+        location: form.location || null,
+        estimatedFleetSizeRaw: form.estimatedFleetSizeRaw || null,
+        primaryPainRaw: form.primaryPainRaw || null,
+        source: form.source,
+      }),
+    });
+    const data = await res.json();
+    setCreating(false);
+    if (data.ok) {
+      setForm(EMPTY_FORM);
+      setShowAddForm(false);
+      setRefreshKey((k) => k + 1);
+    } else {
+      setCreateError(data.reason ?? "unknown_error");
+    }
+  }
 
   async function toggleExpand(id: string) {
     if (expandedId === id) {
@@ -124,12 +175,146 @@ export default function ProspectsTab({ firebaseAdminConfigured }: { firebaseAdmi
             ))}
           </select>
         </div>
-        <button type="button" onClick={runSync} disabled={syncing} className="btn-secondary ml-auto text-sm disabled:opacity-50">
+        <button type="button" onClick={() => setShowAddForm((s) => !s)} className="btn-secondary ml-auto text-sm">
+          {showAddForm ? "Cancel" : "Add prospect"}
+        </button>
+        <button type="button" onClick={runSync} disabled={syncing} className="btn-secondary text-sm disabled:opacity-50">
           {syncing ? "Syncing…" : "Seed outbound list + sync leads"}
         </button>
       </div>
 
       {syncResult && <p className="mt-3 text-xs text-muted">{syncResult}</p>}
+
+      {showAddForm && (
+        <form onSubmit={createProspect} className="card-surface mt-4 space-y-3 p-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label htmlFor="add-name" className="text-xs font-medium text-navy">
+                Company name
+              </label>
+              <input
+                id="add-name"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                required
+                className="mt-1 w-full rounded-df-md border border-border bg-canvas px-3 py-2 text-sm text-navy outline-none focus:border-teal"
+              />
+            </div>
+            <div>
+              <label htmlFor="add-contact-name" className="text-xs font-medium text-navy">
+                Contact name
+              </label>
+              <input
+                id="add-contact-name"
+                value={form.contactName}
+                onChange={(e) => setForm((f) => ({ ...f, contactName: e.target.value }))}
+                className="mt-1 w-full rounded-df-md border border-border bg-canvas px-3 py-2 text-sm text-navy outline-none focus:border-teal"
+              />
+            </div>
+            <div>
+              <label htmlFor="add-contact-role" className="text-xs font-medium text-navy">
+                Contact role
+              </label>
+              <input
+                id="add-contact-role"
+                value={form.contactRole}
+                onChange={(e) => setForm((f) => ({ ...f, contactRole: e.target.value }))}
+                className="mt-1 w-full rounded-df-md border border-border bg-canvas px-3 py-2 text-sm text-navy outline-none focus:border-teal"
+              />
+            </div>
+            <div>
+              <label htmlFor="add-source" className="text-xs font-medium text-navy">
+                Source
+              </label>
+              <select
+                id="add-source"
+                value={form.source}
+                onChange={(e) => setForm((f) => ({ ...f, source: e.target.value as ProspectSource }))}
+                className="mt-1 w-full rounded-df-md border border-border bg-canvas px-3 py-2 text-sm text-navy outline-none focus:border-teal"
+              >
+                {Object.entries(PROSPECT_SOURCE_LABEL).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="add-phone" className="text-xs font-medium text-navy">
+                Phone
+              </label>
+              <input
+                id="add-phone"
+                value={form.contactPhone}
+                onChange={(e) => setForm((f) => ({ ...f, contactPhone: e.target.value }))}
+                placeholder="+260 9..."
+                className="mt-1 w-full rounded-df-md border border-border bg-canvas px-3 py-2 text-sm text-navy outline-none focus:border-teal"
+              />
+            </div>
+            <div>
+              <label htmlFor="add-whatsapp" className="text-xs font-medium text-navy">
+                WhatsApp (if different)
+              </label>
+              <input
+                id="add-whatsapp"
+                value={form.contactWhatsapp}
+                onChange={(e) => setForm((f) => ({ ...f, contactWhatsapp: e.target.value }))}
+                className="mt-1 w-full rounded-df-md border border-border bg-canvas px-3 py-2 text-sm text-navy outline-none focus:border-teal"
+              />
+            </div>
+            <div>
+              <label htmlFor="add-email" className="text-xs font-medium text-navy">
+                Email
+              </label>
+              <input
+                id="add-email"
+                type="email"
+                value={form.contactEmail}
+                onChange={(e) => setForm((f) => ({ ...f, contactEmail: e.target.value }))}
+                className="mt-1 w-full rounded-df-md border border-border bg-canvas px-3 py-2 text-sm text-navy outline-none focus:border-teal"
+              />
+            </div>
+            <div>
+              <label htmlFor="add-location" className="text-xs font-medium text-navy">
+                Location
+              </label>
+              <input
+                id="add-location"
+                value={form.location}
+                onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+                className="mt-1 w-full rounded-df-md border border-border bg-canvas px-3 py-2 text-sm text-navy outline-none focus:border-teal"
+              />
+            </div>
+            <div>
+              <label htmlFor="add-fleet-size" className="text-xs font-medium text-navy">
+                Estimated fleet size
+              </label>
+              <input
+                id="add-fleet-size"
+                value={form.estimatedFleetSizeRaw}
+                onChange={(e) => setForm((f) => ({ ...f, estimatedFleetSizeRaw: e.target.value }))}
+                placeholder="e.g. 5-10 trucks"
+                className="mt-1 w-full rounded-df-md border border-border bg-canvas px-3 py-2 text-sm text-navy outline-none focus:border-teal"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="add-pain" className="text-xs font-medium text-navy">
+                Primary pain (if known)
+              </label>
+              <input
+                id="add-pain"
+                value={form.primaryPainRaw}
+                onChange={(e) => setForm((f) => ({ ...f, primaryPainRaw: e.target.value }))}
+                className="mt-1 w-full rounded-df-md border border-border bg-canvas px-3 py-2 text-sm text-navy outline-none focus:border-teal"
+              />
+            </div>
+          </div>
+          {createError && <p className="text-xs text-danger">Couldn&apos;t create prospect ({createError}).</p>}
+          <button type="submit" disabled={creating} className="btn-primary text-sm disabled:opacity-50">
+            {creating ? "Adding…" : "Add prospect"}
+          </button>
+        </form>
+      )}
 
       {!prospects ? (
         <p className="mt-6 text-sm text-muted">Loading…</p>

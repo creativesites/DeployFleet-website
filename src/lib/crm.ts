@@ -4,6 +4,8 @@ import { getAdminFirestore } from "./firebaseAdmin";
 import { classifyZambianPhone } from "./phoneRules";
 import { PROSPECT_SEED_ROWS } from "./prospectSeedData";
 import type {
+  Campaign,
+  CampaignStatus,
   Interaction,
   InteractionOutcome,
   InteractionType,
@@ -28,6 +30,14 @@ const PROSPECTS = "prospects";
 const INTERACTIONS = "interactions";
 const LEADS = "leads";
 const VISITORS = "visitors";
+const CAMPAIGNS = "campaigns";
+
+/** Phase 0 §6.2's Weekly Targets — the Sales Playbook's own "10 attempts, 5 meaningful interactions" daily benchmark. A tunable constant, not a database-backed setting, same "not worth the complexity yet" choice Visitor Intelligence's scoring.ts already made for its own weight tables. */
+const TARGET_ATTEMPTS_PER_DAY = 10;
+const TARGET_MEANINGFUL_PER_DAY = 5;
+
+/** Which InteractionOutcomes count as "meaningful" per the Sales Playbook's own attempted-vs-meaningful distinction (crmTypes.ts's own InteractionOutcome doc comment). */
+const MEANINGFUL_OUTCOMES = new Set<InteractionOutcome>(["right-person", "meaningful-conversation", "demo-booked"]);
 
 function tsToIso(value: unknown): string | null {
   if (value instanceof Timestamp) return value.toDate().toISOString();
@@ -61,6 +71,7 @@ function prospectFromDoc(doc: DocumentSnapshot): Prospect {
     linkedLeadId: (d.linkedLeadId as string) ?? null,
     linkedVisitorId: (d.linkedVisitorId as string) ?? null,
     visitorSnapshot: (d.visitorSnapshot as VisitorSnapshot) ?? null,
+    campaignId: (d.campaignId as string) ?? null,
     flags: Array.isArray(d.flags) ? (d.flags as string[]) : [],
     createdAt: tsToIso(d.createdAt) ?? new Date(0).toISOString(),
     updatedAt: tsToIso(d.updatedAt) ?? tsToIso(d.createdAt) ?? new Date(0).toISOString(),
@@ -88,6 +99,7 @@ export interface ListProspectsFilters {
   includeArchived?: boolean;
   /** Only prospects whose nextActionDate is on or before this ISO date (YYYY-MM-DD) — the Today tab's query. */
   dueBy?: string;
+  campaignId?: string;
 }
 
 export async function listProspects(filters: ListProspectsFilters = {}): Promise<Prospect[]> {
@@ -99,6 +111,7 @@ export async function listProspects(filters: ListProspectsFilters = {}): Promise
   if (filters.stage !== undefined) prospects = prospects.filter((p) => p.stage === filters.stage);
   if (filters.source) prospects = prospects.filter((p) => p.source === filters.source);
   if (filters.dueBy) prospects = prospects.filter((p) => p.nextActionDate !== null && p.nextActionDate <= filters.dueBy!);
+  if (filters.campaignId) prospects = prospects.filter((p) => p.campaignId === filters.campaignId);
 
   return prospects;
 }
@@ -106,6 +119,64 @@ export async function listProspects(filters: ListProspectsFilters = {}): Promise
 export async function getProspect(id: string): Promise<Prospect | null> {
   const doc = await getAdminFirestore().collection(PROSPECTS).doc(id).get();
   return doc.exists ? prospectFromDoc(doc) : null;
+}
+
+export interface CreateProspectInput {
+  name: string;
+  contactName?: string | null;
+  contactRole?: string | null;
+  contactPhone?: string | null;
+  contactWhatsapp?: string | null;
+  contactEmail?: string | null;
+  location?: string | null;
+  estimatedFleetSizeRaw?: string | null;
+  primaryPainRaw?: string | null;
+  source?: ProspectSource;
+  campaignId?: string | null;
+}
+
+/** Phase 0 §6.5 — the one prospect-creation path that wasn't already covered by seedProspectsFromCsv() (outbound) or syncLeadsToProspects() (inbound website leads). Same phone-classification/defaulting discipline as both of those. */
+export async function createProspect(input: CreateProspectInput): Promise<Prospect> {
+  const db = getAdminFirestore();
+  const phone = input.contactPhone ?? input.contactWhatsapp ?? null;
+  const whatsapp = input.contactWhatsapp ?? input.contactPhone ?? null;
+  const phoneClassification = computePhoneClassification(phone, whatsapp);
+  const now = FieldValue.serverTimestamp();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const ref = await db.collection(PROSPECTS).add({
+    name: input.name,
+    contactName: input.contactName ?? null,
+    contactRole: input.contactRole ?? null,
+    contactPhone: phone,
+    contactWhatsapp: whatsapp,
+    contactEmail: input.contactEmail ?? null,
+    location: input.location ?? null,
+    estimatedFleetSizeRaw: input.estimatedFleetSizeRaw ?? null,
+    primaryPainRaw: input.primaryPainRaw ?? null,
+    phoneClassification,
+    source: input.source ?? "other",
+    stage: 0 satisfies PipelineStage,
+    lastInteractionOutcome: null,
+    lastInteractionSummary: null,
+    lastContactDate: null,
+    nextActionDate: today,
+    nextActionType: phoneClassification.recommendedChannel,
+    nextActionNote: null,
+    priorityScore: null,
+    intelligence: {},
+    linkedLeadId: null,
+    linkedVisitorId: null,
+    visitorSnapshot: null,
+    campaignId: input.campaignId ?? null,
+    flags: ["manual-entry"],
+    createdAt: now,
+    updatedAt: now,
+    archivedAt: null,
+  });
+
+  const doc = await ref.get();
+  return prospectFromDoc(doc);
 }
 
 export interface UpdateProspectInput {
@@ -124,6 +195,7 @@ export interface UpdateProspectInput {
   nextActionNote?: string | null;
   priorityScore?: number | null;
   flags?: string[];
+  campaignId?: string | null;
   /** true archives (the Friday Pipeline Cleanse), false restores. */
   archived?: boolean;
 }
@@ -378,4 +450,162 @@ export async function syncLeadsToProspects(): Promise<{ promoted: number }> {
   }
 
   return { promoted };
+}
+
+function campaignFromDoc(doc: DocumentSnapshot): Campaign {
+  const d = doc.data() ?? {};
+  return {
+    id: doc.id,
+    name: (d.name as string) ?? "",
+    startDate: (d.startDate as string) ?? new Date(0).toISOString().slice(0, 10),
+    endDate: (d.endDate as string) ?? null,
+    targetAttempts: (d.targetAttempts as number) ?? null,
+    targetMeaningfulInteractions: (d.targetMeaningfulInteractions as number) ?? null,
+    status: (d.status as CampaignStatus) ?? "active",
+    createdAt: tsToIso(d.createdAt) ?? new Date(0).toISOString(),
+    updatedAt: tsToIso(d.updatedAt) ?? tsToIso(d.createdAt) ?? new Date(0).toISOString(),
+  };
+}
+
+export async function listCampaigns(): Promise<Campaign[]> {
+  const db = getAdminFirestore();
+  const snapshot = await db.collection(CAMPAIGNS).orderBy("createdAt", "desc").limit(200).get();
+  return snapshot.docs.map(campaignFromDoc);
+}
+
+export async function getCampaign(id: string): Promise<Campaign | null> {
+  const doc = await getAdminFirestore().collection(CAMPAIGNS).doc(id).get();
+  return doc.exists ? campaignFromDoc(doc) : null;
+}
+
+export interface CreateCampaignInput {
+  name: string;
+  startDate: string;
+  endDate?: string | null;
+  targetAttempts?: number | null;
+  targetMeaningfulInteractions?: number | null;
+}
+
+export async function createCampaign(input: CreateCampaignInput): Promise<Campaign> {
+  const db = getAdminFirestore();
+  const now = FieldValue.serverTimestamp();
+  const ref = await db.collection(CAMPAIGNS).add({
+    name: input.name,
+    startDate: input.startDate,
+    endDate: input.endDate ?? null,
+    targetAttempts: input.targetAttempts ?? null,
+    targetMeaningfulInteractions: input.targetMeaningfulInteractions ?? null,
+    status: "active" satisfies CampaignStatus,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const doc = await ref.get();
+  return campaignFromDoc(doc);
+}
+
+export interface UpdateCampaignInput {
+  name?: string;
+  endDate?: string | null;
+  targetAttempts?: number | null;
+  targetMeaningfulInteractions?: number | null;
+  status?: CampaignStatus;
+}
+
+export async function updateCampaign(id: string, patch: UpdateCampaignInput): Promise<void> {
+  const db = getAdminFirestore();
+  await db
+    .collection(CAMPAIGNS)
+    .doc(id)
+    .update({ ...patch, updatedAt: FieldValue.serverTimestamp() });
+}
+
+export interface DayScoreboard {
+  date: string;
+  attempts: number;
+  meaningful: number;
+}
+
+export interface WeeklyScoreboard {
+  weekStart: string;
+  days: DayScoreboard[];
+  totalAttempts: number;
+  totalMeaningful: number;
+  targetAttemptsPerDay: number;
+  targetMeaningfulPerDay: number;
+}
+
+/**
+ * Phase 0 §6.2 — the Operating Rhythm brief's own "10 attempts, 5
+ * meaningful interactions" daily benchmark, made visible. `weekStartIso`
+ * is the Monday (or whichever day the caller treats as week-start) of
+ * the week to report on, as a plain YYYY-MM-DD date. Bounded fetch
+ * across the whole `interactions` collection, filtered in memory by
+ * date — the same composite-index-avoidance discipline as everywhere
+ * else in this file; fine at this data volume.
+ */
+export async function getWeeklyScoreboard(weekStartIso: string): Promise<WeeklyScoreboard> {
+  const db = getAdminFirestore();
+  const weekStart = new Date(`${weekStartIso}T00:00:00.000Z`);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
+
+  const snapshot = await db.collection(INTERACTIONS).limit(5000).get();
+
+  const days: DayScoreboard[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setUTCDate(d.getUTCDate() + i);
+    days.push({ date: d.toISOString().slice(0, 10), attempts: 0, meaningful: 0 });
+  }
+  const dayIndex = new Map(days.map((d, i) => [d.date, i]));
+
+  for (const doc of snapshot.docs) {
+    const data = doc.data();
+    const createdAtIso = tsToIso(data.createdAt);
+    if (!createdAtIso) continue;
+    const createdAt = new Date(createdAtIso);
+    if (createdAt < weekStart || createdAt >= weekEnd) continue;
+    const idx = dayIndex.get(createdAtIso.slice(0, 10));
+    if (idx === undefined) continue;
+    days[idx].attempts++;
+    if (MEANINGFUL_OUTCOMES.has(data.outcome as InteractionOutcome)) days[idx].meaningful++;
+  }
+
+  return {
+    weekStart: weekStartIso,
+    days,
+    totalAttempts: days.reduce((sum, d) => sum + d.attempts, 0),
+    totalMeaningful: days.reduce((sum, d) => sum + d.meaningful, 0),
+    targetAttemptsPerDay: TARGET_ATTEMPTS_PER_DAY,
+    targetMeaningfulPerDay: TARGET_MEANINGFUL_PER_DAY,
+  };
+}
+
+export interface CampaignScoreboard {
+  campaign: Campaign;
+  prospectCount: number;
+  attempts: number;
+  meaningful: number;
+}
+
+/** Phase 0 §6.3 — a campaign's own performance, scoped by which prospects belong to it (Prospect.campaignId) rather than by date range, so it stays accurate even if the campaign's own dates are left open-ended. */
+export async function getCampaignScoreboard(campaignId: string): Promise<CampaignScoreboard | null> {
+  const db = getAdminFirestore();
+  const campaign = await getCampaign(campaignId);
+  if (!campaign) return null;
+
+  const prospectsSnap = await db.collection(PROSPECTS).where("campaignId", "==", campaignId).limit(1000).get();
+  const prospectIds = new Set(prospectsSnap.docs.map((doc) => doc.id));
+
+  const interactionsSnap = await db.collection(INTERACTIONS).limit(5000).get();
+  let attempts = 0;
+  let meaningful = 0;
+  for (const doc of interactionsSnap.docs) {
+    const data = doc.data();
+    if (!prospectIds.has(data.prospectId as string)) continue;
+    attempts++;
+    if (MEANINGFUL_OUTCOMES.has(data.outcome as InteractionOutcome)) meaningful++;
+  }
+
+  return { campaign, prospectCount: prospectIds.size, attempts, meaningful };
 }

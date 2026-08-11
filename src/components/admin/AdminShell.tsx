@@ -23,6 +23,9 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { href: "/admin/today", label: "Today", group: "CRM" },
   { href: "/admin/prospects", label: "Prospects", group: "CRM" },
+  { href: "/admin/pipeline", label: "Pipeline", group: "CRM" },
+  { href: "/admin/targets", label: "Targets", group: "CRM" },
+  { href: "/admin/outreach", label: "Outreach", group: "CRM" },
   { href: "/admin", label: "Overview", group: "Analytics" },
   { href: "/admin/leads", label: "Leads", group: "Analytics" },
   { href: "/admin/visitors", label: "Visitors", group: "Analytics" },

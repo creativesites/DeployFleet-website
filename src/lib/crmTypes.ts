@@ -153,11 +153,29 @@ export interface Prospect {
   linkedVisitorId: string | null;
   visitorSnapshot: VisitorSnapshot | null;
 
+  /** Phase 0 — see docs/ai-marketing-os-architecture.md §4.7/§6.3. Named "Outreach" in the UI to avoid colliding with the separate Visitor Intelligence "Campaigns" (website traffic channels) concept. */
+  campaignId: string | null;
+
   flags: string[];
   createdAt: string;
   updatedAt: string;
   /** Brief #6's Friday Pipeline Cleanse — archives, never deletes. */
   archivedAt: string | null;
+}
+
+/** Phase 0 — "Outreach" in the UI. A batch of outbound activity with its own attempt/meaningful-interaction targets, e.g. "August Outbound Offensive" — the brief's own "DeployFleet — Today's 10" example, made a real entity instead of an implicit daily habit. */
+export type CampaignStatus = "active" | "completed" | "archived";
+
+export interface Campaign {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string | null;
+  targetAttempts: number | null;
+  targetMeaningfulInteractions: number | null;
+  status: CampaignStatus;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Interaction {
