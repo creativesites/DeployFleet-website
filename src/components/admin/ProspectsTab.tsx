@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import {
   INTERACTION_OUTCOME_LABEL,
   INTERACTION_TYPE_LABEL,
@@ -356,6 +357,9 @@ export default function ProspectsTab({ firebaseAdminConfigured }: { firebaseAdmi
 
               {expandedId === p.id && (
                 <div className="mt-4 space-y-4 border-t border-border pt-4 text-sm">
+                  <Link href={`/admin/prospects/${p.id}`} className="text-xs font-semibold text-teal hover:underline">
+                    View full profile →
+                  </Link>
                   {p.location && (
                     <p>
                       <span className="font-medium text-navy">Location:</span> <span className="text-body">{p.location}</span>

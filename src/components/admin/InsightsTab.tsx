@@ -1,12 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 interface AlertItem {
   id: string;
   severity: "info" | "notice" | "high";
   title: string;
   detail: string;
+}
+
+interface ReconciliationFlag {
+  type: string;
+  prospectId: string | null;
+  summary: string;
 }
 
 const SEVERITY_COLOR: Record<AlertItem["severity"], string> = {
@@ -22,6 +29,11 @@ export default function InsightsTab({ firebaseAdminConfigured }: { firebaseAdmin
   const [error, setError] = useState<string | null>(null);
   const [aiState, setAiState] = useState<AiState>("idle");
   const [aiText, setAiText] = useState("");
+
+  const [reconciling, setReconciling] = useState(false);
+  const [reconciliationFlags, setReconciliationFlags] = useState<ReconciliationFlag[] | null>(null);
+  const [reconciliationCheckedAt, setReconciliationCheckedAt] = useState<string | null>(null);
+  const [reconciliationError, setReconciliationError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!firebaseAdminConfigured) return;
@@ -54,6 +66,25 @@ export default function InsightsTab({ firebaseAdminConfigured }: { firebaseAdmin
       }
     } catch {
       setAiState("unavailable");
+    }
+  }
+
+  async function runReconciliation() {
+    setReconciling(true);
+    setReconciliationError(null);
+    try {
+      const res = await fetch("/api/admin/crm/reconciliation/run", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setReconciliationFlags(data.flags);
+        setReconciliationCheckedAt(data.checkedAt);
+      } else {
+        setReconciliationError(data.reason ?? "unknown_error");
+      }
+    } catch {
+      setReconciliationError("network_error");
+    } finally {
+      setReconciling(false);
     }
   }
 
@@ -94,6 +125,50 @@ export default function InsightsTab({ firebaseAdminConfigured }: { firebaseAdmin
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h2 className="text-sm font-semibold text-navy">CRM Reconciliation</h2>
+        <p className="mt-1 text-xs text-muted">
+          The Reality &amp; Reconciliation Engine (§7.5) — deterministic checks, no AI call. Stale next actions,
+          stalled facts, contradicting facts, orphaned decisions, and prospects past first contact with no
+          decision-maker identified. Manual trigger, not a background job — see docs/ai-marketing-os-architecture.md
+          §12 on why.
+        </p>
+        <button type="button" onClick={runReconciliation} disabled={reconciling} className="btn-secondary mt-3 text-sm disabled:opacity-50">
+          {reconciling ? "Checking…" : "Run reconciliation"}
+        </button>
+        {reconciliationError && <p className="mt-2 text-xs text-danger">Couldn&apos;t run reconciliation ({reconciliationError}).</p>}
+        {reconciliationFlags && (
+          <div className="mt-3">
+            <p className="text-xs text-muted">
+              {reconciliationFlags.length === 0 ? "Nothing flagged" : `${reconciliationFlags.length} flag(s) raised`}
+              {reconciliationCheckedAt && ` — checked ${new Date(reconciliationCheckedAt).toLocaleString()}`}
+            </p>
+            {reconciliationFlags.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {reconciliationFlags.map((flag, i) => (
+                  <div key={i} className="card-surface p-3 text-xs">
+                    <span className="rounded-full border border-border bg-canvas px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted">
+                      {flag.type.replace(/_/g, " ")}
+                    </span>
+                    <p className="mt-1 text-body">
+                      {flag.summary}
+                      {flag.prospectId && (
+                        <>
+                          {" "}
+                          <Link href={`/admin/prospects/${flag.prospectId}`} className="text-teal hover:underline">
+                            view prospect
+                          </Link>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

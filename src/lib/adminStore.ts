@@ -23,7 +23,8 @@ import { Redis } from "@upstash/redis";
  */
 export interface KeyValueStore {
   get<T>(key: string): Promise<T | null>;
-  set<T>(key: string, value: T): Promise<void>;
+  set<T>(key: string, value: T, ttlSeconds?: number): Promise<void>;
+  delete(key: string): Promise<void>;
   readonly persistent: boolean;
 }
 
@@ -38,6 +39,10 @@ class MemoryStore implements KeyValueStore {
   async set<T>(key: string, value: T): Promise<void> {
     this.map.set(key, value);
   }
+
+  async delete(key: string): Promise<void> {
+    this.map.delete(key);
+  }
 }
 
 class RedisStore implements KeyValueStore {
@@ -49,8 +54,13 @@ class RedisStore implements KeyValueStore {
     return value ?? null;
   }
 
-  async set<T>(key: string, value: T): Promise<void> {
-    await this.redis.set(key, value);
+  async set<T>(key: string, value: T, ttlSeconds?: number): Promise<void> {
+    if (ttlSeconds) await this.redis.set(key, value, { ex: ttlSeconds });
+    else await this.redis.set(key, value);
+  }
+
+  async delete(key: string): Promise<void> {
+    await this.redis.del(key);
   }
 }
 

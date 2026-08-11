@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   INTERACTION_OUTCOME_LABEL,
   PIPELINE_STAGE_LABEL,
@@ -147,6 +148,10 @@ function ProspectCard({ prospect, onLogged }: { prospect: Prospect; onLogged: (i
             {PIPELINE_STAGE_LABEL[prospect.stage]}
             {isOverdue && <span className="ml-2 font-semibold text-danger">Overdue</span>}
             {prospect.priorityScore !== null && <span className="ml-2">Priority {prospect.priorityScore}</span>}
+            {" · "}
+            <Link href={`/admin/prospects/${prospect.id}`} className="text-teal hover:underline">
+              View full profile
+            </Link>
           </p>
         </div>
         {prospect.visitorSnapshot && (

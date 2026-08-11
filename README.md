@@ -873,31 +873,138 @@ mode quirk, not a bug — the very next request correctly 307s to sign-in,
 and the production build lists the route correctly).
 
 **This CRM is the foundation for a much bigger next step: an AI-native
-Marketing OS**, per [`docs/ai-marketing-os-architecture.md`](docs/ai-marketing-os-architecture.md)
-— an AI Inbox for pasting AI-workforce conversations that self-extracts
-facts/tasks/decisions, dedicated per-prospect intelligence pages with
-per-employee tabs, an AI Workforce Team page, a Decision audit trail, a
-Reality/Reconciliation engine for stale-data detection, a layered
-context-cache architecture (reusing the Upstash Redis already connected
-for diesel prices), and — once that foundation is solid — an AI
-Orchestrator with real tool-calling and an anti-procrastination layer.
-**Phase 0 (the quick CRM-completeness wins — Pipeline/Kanban, Targets,
-Outreach, the manual add-prospect form, all documented above — plus
-resolving the outbound-automation open question: email-only via
-EmailJS, capped at 20/day, no call automation, inbound stays entirely
-human-mediated) is now complete.** Phase 1 (AI Inbox, Prospect
-Intelligence pages, the Team page, the Decision audit trail, the
-Reality/Reconciliation engine, the Context Compiler/cache) is next —
-read the doc before starting any of that work.
+Marketing OS**, per [`docs/ai-marketing-os-architecture.md`](docs/ai-marketing-os-architecture.md).
+**Phase 0** (Pipeline/Kanban, Targets, Outreach, the manual add-prospect
+form, all documented above) **and Phase 1 — the intelligence foundation —
+are both now complete**, built in the doc's own dependency order (§11):
+
+1. **Context Compiler + Redis cache** (`src/lib/ai/contextCompiler.ts`,
+   `src/lib/ai/contextCache.ts`) — the shared function every AI call in
+   this system builds its prompt from, implementing §5's layered model
+   (global/prospect/employee/immediate-task, never "dump the whole
+   CRM"). Reuses the Upstash Redis integration already connected for the
+   diesel-price editor (`adminStore.ts`'s `KeyValueStore`, which gained a
+   `delete()` method this round) rather than a new integration.
+   Invalidation is event-driven, not TTL-driven (a 24h TTL is only the
+   backstop) — every `crm.ts` write function that touches a
+   prospect/employee/global-scoped record calls the matching
+   `invalidate*Context()`. Split into two files specifically to avoid a
+   circular import: `crm.ts`'s write functions need to call
+   `invalidateProspectContext()` etc., but the compile functions need to
+   read `crm.ts` — `contextCache.ts` holds the key names and the
+   Redis-delete side (zero `crm.ts` dependency), `contextCompiler.ts`
+   holds the actual compile-and-cache logic.
+2. **`facts`/`tasks`/`decisions`/`auditEvents`/`aiEmployees`/`inboxEntries`
+   collections** (`crmTypes.ts`/`crm.ts`) — the append-only Fact ledger
+   underneath `ProspectIntelligence` (still the compact "current best
+   answer" a UI reads without a second query; `facts` is the full
+   history), a real Task entity generalizing beyond
+   `Prospect.nextActionDate` (assignable to an AI employee, not just a
+   prospect), the never-edited-only-superseded Decision Ledger, and the
+   append-only `AuditEvent` trail every write path above feeds. Also
+   extended `Prospect` with `icpFitScore`/`opportunityScore` (deliberately
+   separate from the existing `priorityScore` — "how good a fit" vs. "how
+   big" vs. "how ready to buy") and `riskFlags`.
+3. **Prospect Intelligence pages** (`/admin/prospects/[id]`) — header
+   (scores, next action, risk flags, with an inline editor for the three
+   new fields since nothing else in the UI can set them), five tabs:
+   Overview (the flat facts the old expand-in-place panel showed),
+   Intelligence (the compact summary plus full Fact history), Employee
+   Intelligence (one paste box per AI employee, scoped to this prospect
+   — "tabs to add information from each employee specific to that
+   prospect," the feature Winston specifically asked for), Interaction
+   history (unchanged), and Timeline (a merged, chronological view of
+   interactions + facts + tasks + decisions + audit events, computed on
+   read via `/api/admin/crm/prospects/[id]/timeline`, not a stored
+   collection). `/admin/prospects`' own list keeps its expand-to-preview
+   for fast scanning; both Today-tab cards and the Prospects list now
+   link to the full page as the deeper action.
+4. **AI Workforce / Team page** (`/admin/team`, `/admin/team/[id]`) — a
+   one-click seed for 5 starter personas (AI SDR, AI Researcher, AI Sales
+   Coach, AI Market Intelligence, AI SEO; the specific first names are
+   reasonable placeholders, not transcribed from an original brief this
+   session had access to — rename freely). Each employee's page: an
+   editable Mission/standing-instructions section, a real Objectives/task
+   list (add/status-change), a paste-box conversation feed, a
+   deterministic Performance summary (task completion rate — no
+   AI-generated review in Phase 1), and their past `inboxEntries`.
+5. **The AI Inbox** (`/admin/inbox`, plus the same paste box embedded on
+   Prospect and Employee pages) — "paste everything." `POST
+   /api/admin/crm/inbox` creates the immutable `InboxEntry` and
+   immediately runs `INBOX_EXTRACTION_SYSTEM_PROMPT`
+   (`src/lib/ai/prompts.ts`) against the Context Compiler's known-context
+   for whichever prospect/employee it's scoped to, returning a
+   **proposal** (facts/tasks/decisions/risks/recommendations/
+   contradictions) — never a silent write. The review UI
+   (`InboxPasteBox.tsx`, the one component shared across all three paste
+   surfaces) shows per-item Approve/Reject checkboxes, resolves each
+   fact/task's `prospectRef` name string against a real prospect (a
+   fixed prospect when the paste box is already prospect-scoped, or a
+   per-item resolve dropdown otherwise), and only `POST
+   /api/admin/crm/inbox/[id]/apply` — the human-approved step — actually
+   writes to `facts`/`tasks`/`decisions`, each with an `AuditEvent`
+   carrying `sourceInboxEntryId` for the provenance chain (brief #35: no
+   AI write path skips human confirmation).
+6. **Sales Coach call analysis** (§6.4) — not a separate feature, exactly
+   as the architecture doc predicted: the same Inbox route runs a second
+   pass with `SALES_COACH_SYSTEM_PROMPT` whenever `sourceType` is "call
+   transcript," folding structured coaching feedback (what went well,
+   missed opportunities, objections raised, the recommended next
+   question) into the same review UI as `ExtractionResult.callAnalysis`.
+7. **Decision audit trail** (`/admin/decisions`) — a flat list filterable
+   by status/scope, a create form (global/prospect/employee scope,
+   free-text evidence), and a "Supersede" action that creates the
+   replacement and links both decisions bidirectionally — decisions are
+   never edited in place.
+8. **Reality &amp; Reconciliation Engine** (`src/lib/crm/reconciliation.ts`'s
+   `runReconciliation()`) — five deterministic checks, no AI call (same
+   "don't use AI for basic arithmetic" precedent as Visitor
+   Intelligence's own `getAlerts()`): stale next actions (overdue 3+ days
+   with no contact since), stalled facts (unchecked 30+ days — also
+   marks them `reconciliation_required`), contradicting facts (the
+   safety net for anything that slipped past the Inbox's own
+   contradiction detection), orphaned decisions (prospect-scoped,
+   prospect since archived), and prospects past first contact with no
+   decision-maker name recorded. A manual "Run reconciliation" button on
+   the existing `/admin/insights` page — additive to that page's Alerts
+   feed, not a new page, exactly as the doc specified — each flag writing
+   a `reconciliation_flag_raised` `AuditEvent`.
+
+**Nine new/changed routes** under the CRM sidebar group: Prospect
+Intelligence pages, Team + per-employee pages, the AI Inbox, and
+Decisions join Today/Prospects/Pipeline/Targets/Outreach.
+
+**Deliberately deferred to Phase 2+, not silently dropped:** tool-calling
+in the AI router, the AI Orchestrator and its tool registry, autonomy
+levels, the System State object, the AI Command Center redesign of
+`/admin`, the system-wide activity feed, and the anti-procrastination
+engine — all explicitly gated in the doc on Phase 1 being in real daily
+use first. Two smaller Phase-1-adjacent simplifications, disclosed rather
+than hidden: `createFact()` does not automatically project matching keys
+back onto `ProspectIntelligence`'s named fields (that map is still
+written directly by the SDR brief route) — `facts` is its own ledger,
+browsable on the Intelligence tab, not yet unified with the compact
+summary; and there's no resume-review UI for an `InboxEntry` whose
+extraction proposal was left unapproved after navigating away — the
+review flow happens inline, immediately after pasting, same as every
+paste-box instance in this round.
+
+**Not yet verified in a live signed-in browser** — same standing caveat
+as Phase 0 and every route built since. `npx tsc --noEmit`, `eslint`,
+`vitest` (139 tests, unchanged — Phase 1 is CRUD/routes/UI, not new pure
+engines, so no new unit-test surface), and `next build` (all new routes
+registered correctly) all pass.
 
 ### Admin dashboard (`/admin`)
 
 **Redesigned as a sidebar-navigated app, not a single route with
 client-side tabs** — at explicit user direction ("Vercel like ... not
 tabs ... mobile first"). Every former tab is now a real route under
-`/admin/*` (`/admin`, `/admin/today`, `/admin/prospects`,
-`/admin/pipeline`, `/admin/targets`, `/admin/outreach`, `/admin/leads`,
-`/admin/visitors`, `/admin/geography`, `/admin/content`,
+`/admin/*` (`/admin`, `/admin/today`, `/admin/prospects` (plus its
+dynamic `/admin/prospects/[id]` Prospect Intelligence page),
+`/admin/pipeline`, `/admin/targets`, `/admin/outreach`, `/admin/team`
+(plus `/admin/team/[id]`), `/admin/inbox`, `/admin/decisions`,
+`/admin/leads`, `/admin/visitors`, `/admin/geography`, `/admin/content`,
 `/admin/campaigns`, `/admin/realtime`, `/admin/insights`,
 `/admin/diesel-prices`) — the URL
 now reflects what's on screen (bookmarkable, shareable, correct
@@ -947,7 +1054,7 @@ tabs to a clean "not configured" message; Clerk auth and the Diesel Prices
 tab (still on `adminStore.ts`'s Upstash-Redis-backed store, untouched by
 this round) work independently of it.
 
-**Fourteen routes**, grouped in the sidebar as CRM / Analytics / Marketing /
+**Eighteen routes**, grouped in the sidebar as CRM / Analytics / Marketing /
 Intelligence / Settings, each a thin `page.tsx` (in `src/app/admin/*`)
 around a client Tab component (in `src/components/admin/`) that does the
 actual data fetching. CRM leads the group order — DeployFleet's own
@@ -958,12 +1065,18 @@ ahead of the website-visitor analytics below it.
 above):**
 - **Today** (`/admin/today`) — Winston's daily queue.
 - **Prospects** (`/admin/prospects`) — the full pipeline, browse/seed/sync/
-  add.
+  add; each prospect links to its own `/admin/prospects/[id]` Prospect
+  Intelligence page.
 - **Pipeline** (`/admin/pipeline`) — the Kanban stage board.
 - **Targets** (`/admin/targets`) — the weekly attempts/meaningful-
   interactions scoreboard.
 - **Outreach** (`/admin/outreach`) — campaign creation, prospect
   assignment, per-campaign scoreboard.
+- **Team** (`/admin/team`) — the AI Workforce list; each employee links
+  to `/admin/team/[id]`.
+- **AI Inbox** (`/admin/inbox`) — "paste everything" — see the
+  AI-native Marketing OS section above.
+- **Decisions** (`/admin/decisions`) — the Decision Ledger.
 
 **Analytics:**
 - **Overview** (`/admin`) — pageview counts (all-time, last 7/30 days,
