@@ -1106,6 +1106,67 @@ while; and the `emailSends` collection / 20-per-day cap / actual send
 route from the EmailJS setup below, which is account/template-ready but
 not wired to a send button yet.
 
+### Phase 3 — the anti-procrastination engine
+
+Per doc §9, correctly sequenced last since it needs Phase 2's System
+State and Orchestrator to already know what "on track" and "behind"
+mean. All three touchpoints are inline on the Command Center
+(`src/components/admin/DailyRhythm.tsx`, rendered above the tiles) —
+never a notification, since no delivery channel exists (§12) — and
+deliberately not modal: closing the tab is always possible, but each
+piece re-appears on the next Command Center load that same day until
+dismissed/completed, matching this system's own "pushy, not
+unaccountable" design goal from the original brief.
+
+- **Morning brief** — on the first Command Center load of the calendar
+  day, fires a real Orchestrator turn (`POST
+  /api/admin/crm/orchestrator/ask` with a fixed prompt asking it to use
+  `generate_daily_brief`) and shows the answer in a violet-accented
+  (AI-content convention) card. Falls back to a deterministic one-liner
+  built from System State if the AI call fails — never blocked by an AI
+  failure, same discipline as every AI feature in this project.
+  Dismissible; won't re-fire again until the next calendar day
+  (`useDailyRhythm.ts`, per-browser via `localStorage`, the same
+  `useSyncExternalStore` pattern as `useDemoUnlocked`/`useSelectedCountry`).
+- **Midday nudge** — a **deterministic** check, not an AI call: after
+  12:00 (browser-local time) with today's attempts still under half the
+  daily target, a dismissible banner. **One disclosed deviation from the
+  doc's literal wording**: §9 describes this as "time spent in
+  non-outbound activity today vs. outbound target," but this system has
+  no time-tracking/activity-telemetry mechanism anywhere — the doc's own
+  §12 lists this as a real, separate gap. Implemented instead as
+  attempts-logged-vs-target-by-this-hour, the closest honest proxy
+  actually buildable from data this system has.
+- **End-of-day review** — after 17:00, a card showing today's target vs.
+  actual, plus every task due today or earlier that's still open/
+  in-progress, each needing a reason before the review can be marked
+  complete: `no-answer`/`bad-data`/`blocked`/`forgot`/`low-priority`/
+  `avoided`/`other` (a new `TaskIncompleteReason` field directly on
+  `Task`, not a new Fact-like construct — the simpler of the two options
+  the doc itself left open, and the one that fits this codebase's
+  existing shapes without inventing a "scoped to Winston himself" special
+  case). "Forced" means the **Complete review** button stays disabled
+  until every listed task is classified, not that the page traps you —
+  if there's nothing incomplete, one tap marks it reviewed.
+
+**Procrastination-pattern detection** (the doc's own fourth Phase 3
+item) is explicitly **not built** — the doc itself says it "needs weeks
+of [end-of-day classification] data to have anything to learn from" and
+is "not scoped further in this document." Nothing to build yet; the
+classification data above is what a future pass would mine.
+
+No new API routes this phase — the morning brief reuses the existing
+Orchestrator endpoint with a fixed prompt, the midday nudge is pure
+client-side arithmetic over already-fetched System State, and the
+end-of-day review reuses the existing task list/update routes.
+
+**Not yet verified in a live signed-in browser** — same standing
+caveat as every phase before it, and this one in particular needs a
+real clock: the three touchpoints only render past specific hours
+(12:00/17:00) and only once per calendar day per browser, none of which
+this dev environment can exercise end-to-end. `npx tsc --noEmit`,
+`eslint`, `vitest` (139 tests, unchanged), and `next build` all pass.
+
 ### EmailJS — outbound email (account/templates ready, send button not built)
 
 [`docs/email-templates.md`](docs/email-templates.md) has the full setup:

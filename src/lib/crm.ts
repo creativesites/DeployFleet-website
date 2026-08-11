@@ -32,6 +32,7 @@ import type {
   ProspectSource,
   Task,
   TaskCreatedBy,
+  TaskIncompleteReason,
   TaskPriority,
   TaskStatus,
   VisitorSnapshot,
@@ -825,6 +826,7 @@ function taskFromDoc(doc: DocumentSnapshot): Task {
     priority: (d.priority as TaskPriority) ?? "medium",
     createdBy: (d.createdBy as TaskCreatedBy) ?? "human",
     sourceInboxEntryId: (d.sourceInboxEntryId as string) ?? null,
+    incompleteReason: (d.incompleteReason as Task["incompleteReason"]) ?? null,
     completedAt: tsToIso(d.completedAt),
     createdAt: tsToIso(d.createdAt) ?? new Date(0).toISOString(),
     updatedAt: tsToIso(d.updatedAt) ?? tsToIso(d.createdAt) ?? new Date(0).toISOString(),
@@ -856,6 +858,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     priority: input.priority ?? "medium",
     createdBy: input.createdBy,
     sourceInboxEntryId: input.sourceInboxEntryId ?? null,
+    incompleteReason: null,
     completedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -888,6 +891,8 @@ export interface UpdateTaskInput {
   dueDate?: string | null;
   status?: TaskStatus;
   priority?: TaskPriority;
+  /** Phase 3 §9 — set during an end-of-day review, on a task that's still incomplete. */
+  incompleteReason?: TaskIncompleteReason | null;
 }
 
 export async function updateTask(id: string, patch: UpdateTaskInput): Promise<void> {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ChatInput from "./ChatInput";
+import DailyRhythm from "./DailyRhythm";
 import type { InboxEntry, Prospect } from "@/lib/crmTypes";
 
 interface SystemState {
@@ -232,6 +233,8 @@ export default function CommandCenter({ firebaseAdminConfigured }: { firebaseAdm
       </div>
 
       {loadError && <p className="text-sm text-danger">Couldn&apos;t load Command Center data ({loadError}).</p>}
+
+      <DailyRhythm state={state} />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="card-surface p-4">

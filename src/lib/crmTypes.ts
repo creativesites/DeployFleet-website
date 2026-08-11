@@ -224,6 +224,19 @@ export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
   cancelled: "Cancelled",
 };
 
+/** Phase 3 §9's end-of-day review — the forced classification for any task still incomplete at review time. Modeled as a field directly on Task rather than a new Fact-like construct scoped to Winston himself, per the architecture doc's own "modeling decision to make when this phase starts" — the simpler, more consistent-with-existing-patterns choice. */
+export type TaskIncompleteReason = "no-answer" | "bad-data" | "blocked" | "forgot" | "low-priority" | "avoided" | "other";
+
+export const TASK_INCOMPLETE_REASON_LABEL: Record<TaskIncompleteReason, string> = {
+  "no-answer": "No answer / couldn't reach them",
+  "bad-data": "Bad contact info",
+  blocked: "Blocked on something else",
+  forgot: "Forgot",
+  "low-priority": "Deprioritized for something more urgent",
+  avoided: "Avoided it",
+  other: "Other",
+};
+
 export interface Task {
   id: string;
   title: string;
@@ -237,6 +250,8 @@ export interface Task {
   createdBy: TaskCreatedBy;
   /** Phase 1 §4.5 — provenance back to the pasted text this came from. */
   sourceInboxEntryId: string | null;
+  /** Phase 3 §9 — set only when Winston classifies this task during an end-of-day review while it's still incomplete. */
+  incompleteReason: TaskIncompleteReason | null;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
