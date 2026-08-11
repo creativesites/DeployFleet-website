@@ -38,7 +38,9 @@ export default function DemoForm({
 
     // Fire-and-forget — never blocks the WhatsApp handoff below, which
     // stays the real, always-working submission path.
-    submitLead({ name, company, phone, fleetSize, source });
+    submitLead({ name, company, phone, fleetSize, source }).then((leadId) => {
+      if (leadId) void analytics.linkLead(leadId);
+    });
     void analytics.conversion(source === "contact-form" ? "contact_request" : "demo_request", { source });
 
     window.open(

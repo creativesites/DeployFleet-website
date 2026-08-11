@@ -22,10 +22,15 @@ export interface LeadInput {
  * field-validated, no read/update/delete from the client) — there's no
  * signed-in visitor to authenticate against on a marketing site's lead
  * forms.
+ *
+ * Returns the new lead's id (or null on failure) so callers can link it
+ * to the current Visitor Intelligence visitor record — see
+ * src/lib/analytics/client.ts's linkLead(), spec §18/§38's "anonymous
+ * visitor becomes an identified lead" requirement.
  */
-export async function submitLead(input: LeadInput): Promise<void> {
+export async function submitLead(input: LeadInput): Promise<string | null> {
   try {
-    await addDoc(collection(db, "leads"), {
+    const ref = await addDoc(collection(db, "leads"), {
       name: input.name,
       company: input.company,
       phone: input.phone,
@@ -35,9 +40,11 @@ export async function submitLead(input: LeadInput): Promise<void> {
       status: "new" satisfies LeadStatus,
       createdAt: serverTimestamp(),
     });
+    return ref.id;
   } catch (error) {
     // Never let a lead-persistence failure block the form's real
     // submission path (WhatsApp) or surface as a user-facing error.
     console.error("submitLead failed", error);
+    return null;
   }
 }

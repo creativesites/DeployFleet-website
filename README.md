@@ -694,14 +694,44 @@ rather than via a Cloud Function/Blaze billing plan) groups the legacy
 `visitors` records — a "Backfill legacy pageviews" button in the Visitors
 tab, not an automatic migration, since it's a heavier one-time operation.
 
-**Not yet built (Phase 2+ of the spec this was built against, tracked but
-out of scope for this pass):** Google Maps/geographic dashboard, the SEO
-opportunity engine, the AI marketing-intelligence layer (would reuse the
-existing DeepSeek/Gemini router — same one the calculators' "AI Insight"
-panels already use), real-time active-visitor view, and configurable
-alerts. The Visitors tab (list + expandable per-visitor timeline) is the
-only dashboard surface for this data so far — no dedicated Visitor Profile
-page, Geography tab, or Content Performance report yet.
+**Phase 2 (Intelligence) is now built.** `submitLead()` (`src/lib/leads.ts`)
+returns the new lead's id; `DemoForm`/`CtaSection` pass it to the client
+SDK's new `analytics.linkLead(leadId)`, which calls `/api/analytics/
+link-lead` → `linkVisitorToLead()` — the anonymous visitor's `status`
+flips to `"identified"` and their `leadId` is set, closing spec §18/§38's
+"anonymous visitor → identified lead, full history attached" requirement.
+Best-effort and non-blocking, same discipline as `submitLead()` itself: a
+failed link never undoes the lead that was already saved. The Visitors
+tab's expanded card is now a real profile (spec §20's Identity/
+Engagement/Acquisition/Geography/Technology/Behavior/Timeline sections),
+not just a timeline — still inline in the list rather than a separate
+route, since Next.js dynamic-route plumbing wasn't worth the extra
+surface for what's still a single-admin dashboard.
+
+**Phase 3 (Geographic Intelligence) is now built, minus the map itself.**
+A new **Geography** tab: a Today/7d/30d/90d/All-time selector,
+`getGeographyBreakdown()` (`src/lib/visitorIntelligence.ts`) grouping
+`visitors` by country → city with visitor/session counts, average
+engagement, high-intent counts, and a real join against `visitorEvents`
+for demo/contact-request counts per country. No hardcoded city list
+(spec §17) — Zambian cities (or any others) surface naturally from
+whichever real visitor data exists. **No Google Maps integration** — no
+API key is configured for it, so this stays a sortable, expandable table
+rather than a plotted map; spec §16 itself prefers a heatmap/cluster view
+over "thousands of individual markers" anyway, so the table isn't a
+placeholder for the real thing, it's a reasonable v1 on its own. Add
+`GOOGLE_MAPS_API_KEY` (server-only, for reverse geocoding — spec §15
+explicitly warns against calling Geocoding directly from the browser) if
+a real map view becomes worth building.
+
+**Not yet built (Phase 4/5 of the spec, tracked but out of scope for this
+pass):** the SEO opportunity engine, the AI marketing-intelligence layer
+(would reuse the existing DeepSeek/Gemini router — same one the
+calculators' "AI Insight" panels already use), real-time active-visitor
+view, and configurable alerts. Content Performance (per-page views/
+engagement/conversion-rate reporting) also isn't built yet — the raw data
+(`pageViewCounts` per visitor, `page_view` events) exists to build it
+from, just not the report itself.
 
 ### Admin dashboard (`/admin`)
 
@@ -734,12 +764,12 @@ Firestore access via a Firebase service account
 `FIREBASE_ADMIN_PRIVATE_KEY`), independent of Clerk entirely (Clerk
 proves identity; the Admin SDK is a separate, unrelated credential for
 data access — no Clerk↔Firebase token-exchange integration was needed
-or built). Missing this only degrades the Overview/Leads/Visitors tabs to a clean
-"not configured" message; Clerk auth and the Diesel Prices tab (still on
-`adminStore.ts`'s Upstash-Redis-backed store, untouched by this round)
-work independently of it.
+or built). Missing this only degrades the Overview/Leads/Visitors/Geography
+tabs to a clean "not configured" message; Clerk auth and the Diesel Prices
+tab (still on `adminStore.ts`'s Upstash-Redis-backed store, untouched by
+this round) work independently of it.
 
-**Four tabs**, all in `src/components/admin/`:
+**Five tabs**, all in `src/components/admin/`:
 - **Overview** — pageview counts (all-time, last 7/30 days, unique
   visitors via a locally-generated `localStorage` id, no cookies or
   fingerprinting), leads-by-pipeline-status counts, and a top-10-pages
@@ -760,9 +790,13 @@ work independently of it.
 - **Visitors** — the Visitor Intelligence 2.0 pipeline's dashboard surface
   (see the section above): a filterable (status, minimum intent score)
   visitor list with engagement/intent score badges, an expand-to-load
-  per-visitor timeline (`/api/admin/visitors/[id]`, merging session
-  boundaries and events chronologically), and the legacy-pageviews
+  full profile (`/api/admin/visitors/[id]`, merging session boundaries
+  and events chronologically for the timeline), and the legacy-pageviews
   backfill trigger.
+- **Geography** — the Phase 3 country/city breakdown (see the section
+  above): a Today/7d/30d/90d/All-time range selector, an expandable
+  country table with visitor/session/engagement/high-intent/demo-request
+  counts, no map yet.
 - **Diesel Prices** — unchanged from before, just re-gated: same
   `adminStore.ts` A-to-C Upstash bridge, same UI, only the auth check on
   `PUT /api/diesel-price` swapped from the old session cookie to

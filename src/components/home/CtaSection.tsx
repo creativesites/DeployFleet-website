@@ -17,7 +17,9 @@ export default function CtaSection() {
 
     // Fire-and-forget — never blocks the WhatsApp handoff below, which
     // stays the real, always-working submission path.
-    submitLead({ name, company, phone, source: "homepage-cta" });
+    submitLead({ name, company, phone, source: "homepage-cta" }).then((leadId) => {
+      if (leadId) void analytics.linkLead(leadId);
+    });
     void analytics.conversion("demo_request", { source: "homepage-cta" });
 
     window.open(

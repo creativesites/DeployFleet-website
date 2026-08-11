@@ -198,6 +198,26 @@ class AnalyticsClient {
     await this.track(eventType, { metadata });
   }
 
+  /** The current visitor doc id, once identify() has resolved — null before then or if identify() itself failed. */
+  getVisitorId(): string | null {
+    return this.visitorId;
+  }
+
+  /**
+   * Spec §18/§38 — call after a lead form's own submission succeeds
+   * (see leads.ts's submitLead(), which now returns the new lead's id)
+   * so the anonymous visitor becomes an identified one with their full
+   * history already attached. Best-effort and non-blocking, same
+   * "never fail the real submission" discipline as submitLead() itself —
+   * a failed link here just means the visitor stays anonymous, it never
+   * undoes the lead that was already saved.
+   */
+  async linkLead(leadId: string): Promise<void> {
+    await this.identify();
+    if (!this.visitorId) return;
+    await postJson("/api/analytics/link-lead", { visitorId: this.visitorId, leadId });
+  }
+
   private ensureHeartbeat(): void {
     if (!this.listenersBound) {
       document.addEventListener("visibilitychange", () => {

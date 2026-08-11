@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { engagementBand, intentCategory } from "@/lib/analytics/scoring";
 import type { Visitor, VisitorEvent, VisitorSession } from "@/lib/visitorTypes";
 
@@ -35,6 +35,43 @@ function ScoreBadge({ label, score, band }: { label: string; score: number; band
       {label} {score}
     </span>
   );
+}
+
+/** Spec §20's "Identity / Engagement / Acquisition / Geography / Technology / Behavior" profile sections. */
+function ProfileSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">{title}</p>
+      <div className="mt-2">{children}</div>
+    </div>
+  );
+}
+
+function DetailGrid({ items }: { items: { label: string; value: ReactNode }[] }) {
+  return (
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+      {items.map(({ label, value }) => (
+        <div key={label}>
+          <dt className="text-[10px] font-medium uppercase tracking-wide text-muted">{label}</dt>
+          <dd className="text-sm text-navy">{value ?? "—"}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function formatDuration(totalSeconds: number): string {
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  if (minutes < 60) return `${minutes}m ${totalSeconds % 60}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+function topPages(pageViewCounts: Record<string, number>, limit = 5): [string, number][] {
+  return Object.entries(pageViewCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit);
 }
 
 export default function VisitorsTab({ firebaseAdminConfigured }: { firebaseAdminConfigured: boolean }) {
@@ -201,30 +238,146 @@ export default function VisitorsTab({ firebaseAdminConfigured }: { firebaseAdmin
                 </button>
 
                 {expandedId === v.id && (
-                  <div className="mt-4 border-t border-border pt-4">
-                    {detailLoading && <p className="text-sm text-muted">Loading timeline…</p>}
+                  <div className="mt-4 space-y-5 border-t border-border pt-4">
+                    {detailLoading && <p className="text-sm text-muted">Loading profile…</p>}
                     {detail && (
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                          Timeline ({detail.timeline.length} entries)
-                        </p>
-                        <div className="max-h-80 space-y-1.5 overflow-y-auto">
-                          {detail.timeline.length === 0 && <p className="text-sm text-muted">No activity recorded yet.</p>}
-                          {detail.timeline.map((entry, idx) => (
-                            <div key={idx} className="flex items-baseline gap-2 text-xs">
-                              <span className="w-36 shrink-0 text-muted">
-                                {new Date(entry.timestamp).toLocaleString()}
-                              </span>
-                              <span className="text-navy">
-                                {entry.kind === "session_start" && "Session started"}
-                                {entry.kind === "session_end" && "Session ended"}
-                                {entry.kind === "event" &&
-                                  `${entry.event?.eventType}${entry.event?.pagePath ? ` — ${entry.event.pagePath}` : ""}`}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      <>
+                        <ProfileSection title="Identity">
+                          <DetailGrid
+                            items={[
+                              { label: "Visitor ID", value: <span className="font-mono text-xs">{detail.visitor.id}</span> },
+                              {
+                                label: "Fingerprint",
+                                value: detail.visitor.fingerprintVisitorId
+                                  ? `Verified (confidence ${detail.visitor.confidenceScore != null ? Math.round(detail.visitor.confidenceScore * 100) + "%" : "unknown"})`
+                                  : "Legacy id only",
+                              },
+                              { label: "First seen", value: new Date(detail.visitor.firstSeenAt).toLocaleString() },
+                              { label: "Last seen", value: new Date(detail.visitor.lastSeenAt).toLocaleString() },
+                              {
+                                label: "Lead",
+                                value: detail.visitor.leadId ? `Linked — ${detail.visitor.leadId.slice(0, 12)}` : "Not identified",
+                              },
+                              {
+                                label: "Signals",
+                                value: [
+                                  detail.visitor.isBot && "Bot",
+                                  detail.visitor.isVpn && "VPN",
+                                  detail.visitor.isIncognito && "Incognito",
+                                  detail.visitor.isProxy && "Proxy",
+                                ]
+                                  .filter(Boolean)
+                                  .join(", ") || "None detected",
+                              },
+                            ]}
+                          />
+                        </ProfileSection>
+
+                        <ProfileSection title="Engagement">
+                          <DetailGrid
+                            items={[
+                              { label: "Sessions", value: detail.visitor.totalSessions },
+                              { label: "Page views", value: detail.visitor.totalPageViews },
+                              { label: "Events", value: detail.visitor.totalEvents },
+                              { label: "Active time", value: formatDuration(detail.visitor.totalActiveSeconds) },
+                              { label: "Avg session", value: formatDuration(detail.visitor.averageSessionSeconds) },
+                              {
+                                label: "Score",
+                                value: `${detail.visitor.engagementScore}/100 (${engagementBand(detail.visitor.engagementScore)})`,
+                              },
+                            ]}
+                          />
+                        </ProfileSection>
+
+                        <ProfileSection title="Acquisition">
+                          <DetailGrid
+                            items={[
+                              { label: "First landing page", value: detail.visitor.firstLandingPage },
+                              { label: "First source", value: detail.visitor.firstReferrerType.replace("_", " ") },
+                              { label: "First campaign", value: detail.visitor.firstUtm.utmCampaign },
+                              { label: "Last landing page", value: detail.visitor.lastLandingPage },
+                              { label: "Last source", value: detail.visitor.lastReferrerType.replace("_", " ") },
+                              { label: "Last campaign", value: detail.visitor.lastUtm.utmCampaign },
+                            ]}
+                          />
+                        </ProfileSection>
+
+                        <ProfileSection title="Geography">
+                          <DetailGrid
+                            items={[
+                              { label: "Country", value: detail.visitor.country },
+                              { label: "Region", value: detail.visitor.region },
+                              { label: "City", value: detail.visitor.city },
+                              { label: "Timezone", value: detail.visitor.timezone },
+                              { label: "Source", value: detail.visitor.locationSource !== "unknown" ? detail.visitor.locationSource.replace("_", " ") : null },
+                            ]}
+                          />
+                        </ProfileSection>
+
+                        <ProfileSection title="Technology">
+                          <DetailGrid
+                            items={[
+                              { label: "Device", value: detail.visitor.deviceType !== "unknown" ? detail.visitor.deviceType : null },
+                              {
+                                label: "Browser",
+                                value: detail.visitor.browser
+                                  ? `${detail.visitor.browser}${detail.visitor.browserVersion ? ` ${detail.visitor.browserVersion}` : ""}`
+                                  : null,
+                              },
+                              {
+                                label: "OS",
+                                value: detail.visitor.operatingSystem
+                                  ? `${detail.visitor.operatingSystem}${detail.visitor.osVersion ? ` ${detail.visitor.osVersion}` : ""}`
+                                  : null,
+                              },
+                              {
+                                label: "Screen",
+                                value:
+                                  detail.visitor.screenWidth && detail.visitor.screenHeight
+                                    ? `${detail.visitor.screenWidth}×${detail.visitor.screenHeight}`
+                                    : null,
+                              },
+                              { label: "Language", value: detail.visitor.language },
+                            ]}
+                          />
+                        </ProfileSection>
+
+                        <ProfileSection title="Behavior">
+                          {topPages(detail.visitor.pageViewCounts).length === 0 ? (
+                            <p className="text-sm text-muted">No pages recorded yet.</p>
+                          ) : (
+                            <ul className="space-y-1 text-sm text-navy">
+                              {topPages(detail.visitor.pageViewCounts).map(([path, count]) => (
+                                <li key={path} className="flex justify-between gap-4">
+                                  <span className="truncate">{path}</span>
+                                  <span className="shrink-0 text-muted">
+                                    {count} view{count === 1 ? "" : "s"}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </ProfileSection>
+
+                        <ProfileSection title={`Timeline (${detail.timeline.length} entries)`}>
+                          <div className="max-h-80 space-y-1.5 overflow-y-auto">
+                            {detail.timeline.length === 0 && <p className="text-sm text-muted">No activity recorded yet.</p>}
+                            {detail.timeline.map((entry, idx) => (
+                              <div key={idx} className="flex items-baseline gap-2 text-xs">
+                                <span className="w-36 shrink-0 text-muted">
+                                  {new Date(entry.timestamp).toLocaleString()}
+                                </span>
+                                <span className="text-navy">
+                                  {entry.kind === "session_start" && "Session started"}
+                                  {entry.kind === "session_end" && "Session ended"}
+                                  {entry.kind === "event" &&
+                                    `${entry.event?.eventType}${entry.event?.pagePath ? ` — ${entry.event.pagePath}` : ""}`}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </ProfileSection>
+                      </>
                     )}
                   </div>
                 )}

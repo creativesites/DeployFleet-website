@@ -1,7 +1,7 @@
 import "server-only";
 import { FieldPath, FieldValue, Timestamp, type DocumentSnapshot } from "firebase-admin/firestore";
 import { getAdminFirestore } from "./firebaseAdmin";
-import { ENGAGEMENT_WEIGHTS, INTENT_WEIGHTS, RETURNING_SESSION_ENGAGEMENT_BONUS, RETURNING_SESSION_INTENT_BONUS, clampScore } from "./analytics/scoring";
+import { ENGAGEMENT_WEIGHTS, INTENT_WEIGHTS, RETURNING_SESSION_ENGAGEMENT_BONUS, RETURNING_SESSION_INTENT_BONUS, clampScore, intentCategory } from "./analytics/scoring";
 import {
   EMPTY_UTM,
   classifyReferrer,
@@ -741,4 +741,107 @@ export async function backfillVisitorsFromPageviews(limit = 5000): Promise<Backf
   }
 
   return { pageviewsScanned: snapshot.size, visitorsCreated, visitorsMerged };
+}
+
+export interface GeographyCityRow {
+  city: string;
+  visitorCount: number;
+  sessionCount: number;
+  avgEngagement: number;
+  highIntentCount: number;
+}
+
+export interface GeographyCountryRow {
+  country: string;
+  countryCode: string | null;
+  visitorCount: number;
+  sessionCount: number;
+  avgEngagement: number;
+  highIntentCount: number;
+  demoRequestCount: number;
+  cities: GeographyCityRow[];
+}
+
+/**
+ * Spec §14/§16/§17 — a table-first geographic breakdown (spec §16 itself
+ * prefers a heatmap/cluster view over "thousands of individual markers";
+ * a country/city table is the same spirit without needing a Google Maps
+ * API key at all, which this project doesn't have configured yet). No
+ * hardcoded Zambian city list (spec §17) — cities fall out naturally from
+ * whichever real visitor data exists.
+ *
+ * Grounded in `visitors` (each carrying its own most-recently-known
+ * location) rather than `visitorSessions`, filtered by lastSeenAt within
+ * the window — a deliberate v1 simplification: a per-session/per-event
+ * geographic breakdown would need every VisitorEvent to carry its own
+ * country/city (it doesn't, only Visitor/VisitorSession do), so "visitor
+ * was active in this window" is the practical unit here, not "session
+ * happened in this window". Demo/contact-request counts are the one
+ * exception — those come from a real visitorEvents query, joined back to
+ * each visitor's location.
+ */
+export async function getGeographyBreakdown(sinceIso: string | null): Promise<GeographyCountryRow[]> {
+  const db = getAdminFirestore();
+  const allVisitors = await listVisitors({ limit: 3000 });
+  const visitors = sinceIso ? allVisitors.filter((v) => v.lastSeenAt >= sinceIso) : allVisitors;
+  const visitorById = new Map(allVisitors.map((v) => [v.id, v]));
+
+  const conversionEventsSnap = await db
+    .collection(EVENTS)
+    .where("eventType", "in", ["demo_request", "contact_request"])
+    .limit(3000)
+    .get();
+  const demoCountByCountry = new Map<string, number>();
+  for (const doc of conversionEventsSnap.docs) {
+    const data = doc.data();
+    const ts = tsToIso(data.timestamp);
+    if (sinceIso && (!ts || ts < sinceIso)) continue;
+    const visitor = visitorById.get(data.visitorId as string);
+    const country = visitor?.country ?? "Unknown";
+    demoCountByCountry.set(country, (demoCountByCountry.get(country) ?? 0) + 1);
+  }
+
+  const countryGroups = new Map<string, { countryCode: string | null; visitors: Visitor[]; cityGroups: Map<string, Visitor[]> }>();
+  for (const v of visitors) {
+    const country = v.country ?? "Unknown";
+    if (!countryGroups.has(country)) countryGroups.set(country, { countryCode: v.countryCode, visitors: [], cityGroups: new Map() });
+    const group = countryGroups.get(country)!;
+    group.visitors.push(v);
+    if (!group.countryCode && v.countryCode) group.countryCode = v.countryCode;
+
+    const city = v.city ?? "Unknown";
+    if (!group.cityGroups.has(city)) group.cityGroups.set(city, []);
+    group.cityGroups.get(city)!.push(v);
+  }
+
+  const averageEngagement = (vs: Visitor[]): number =>
+    vs.length ? Math.round(vs.reduce((sum, v) => sum + v.engagementScore, 0) / vs.length) : 0;
+  const highIntentCount = (vs: Visitor[]): number =>
+    vs.filter((v) => intentCategory(v.intentScore) === "high-intent" || intentCategory(v.intentScore) === "sales-ready").length;
+
+  const rows: GeographyCountryRow[] = [];
+  for (const [country, group] of countryGroups) {
+    const cities: GeographyCityRow[] = [...group.cityGroups.entries()]
+      .map(([city, vs]) => ({
+        city,
+        visitorCount: vs.length,
+        sessionCount: vs.reduce((sum, v) => sum + v.totalSessions, 0),
+        avgEngagement: averageEngagement(vs),
+        highIntentCount: highIntentCount(vs),
+      }))
+      .sort((a, b) => b.visitorCount - a.visitorCount);
+
+    rows.push({
+      country,
+      countryCode: group.countryCode,
+      visitorCount: group.visitors.length,
+      sessionCount: group.visitors.reduce((sum, v) => sum + v.totalSessions, 0),
+      avgEngagement: averageEngagement(group.visitors),
+      highIntentCount: highIntentCount(group.visitors),
+      demoRequestCount: demoCountByCountry.get(country) ?? 0,
+      cities,
+    });
+  }
+
+  return rows.sort((a, b) => b.visitorCount - a.visitorCount);
 }
