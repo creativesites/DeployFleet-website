@@ -724,21 +724,41 @@ placeholder for the real thing, it's a reasonable v1 on its own. Add
 explicitly warns against calling Geocoding directly from the browser) if
 a real map view becomes worth building.
 
-**Not yet built (Phase 4/5 of the spec, tracked but out of scope for this
-pass):** the SEO opportunity engine, the AI marketing-intelligence layer
-(would reuse the existing DeepSeek/Gemini router — same one the
-calculators' "AI Insight" panels already use), real-time active-visitor
-view, and configurable alerts. Content Performance (per-page views/
-engagement/conversion-rate reporting) also isn't built yet — the raw data
-(`pageViewCounts` per visitor, `page_view` events) exists to build it
-from, just not the report itself.
+**Phase 4 and 5 are now built too** — Content Performance, Campaigns
+(source/campaign + funnel), Real-Time, and Insights (alerts + AI
+narrative). See the "Admin dashboard" section below for the full
+breakdown. The one deliberately-still-open piece from the original
+spec is the **SEO opportunity engine** — it needs organic-only traffic
+segmented per page, which needs every `VisitorEvent` to carry its
+session's referrer type (only `VisitorSession` does today); the Content
+page's classification badges cover the rest of spec §24's label set
+without it.
 
 ### Admin dashboard (`/admin`)
 
-**Auth is now Clerk, not the old shared-password HMAC-cookie gate** — the
+**Redesigned as a sidebar-navigated app, not a single route with
+client-side tabs** — at explicit user direction ("Vercel like ... not
+tabs ... mobile first"). Every former tab is now a real route under
+`/admin/*` (`/admin`, `/admin/leads`, `/admin/visitors`,
+`/admin/geography`, `/admin/content`, `/admin/campaigns`,
+`/admin/realtime`, `/admin/insights`, `/admin/diesel-prices`) — the URL
+now reflects what's on screen (bookmarkable, shareable, correct
+back-button behavior), which a single route with `useState` tab
+selection could never do. `src/app/admin/layout.tsx` does the two-gate
+auth check once for all of them (previously only `/admin/page.tsx` did
+it, back when it was the only route); `src/components/admin/AdminShell.tsx`
+is the actual chrome — a persistent left sidebar grouped into
+Analytics/Marketing/Intelligence/Settings on desktop (`md:` and up), a
+slim top bar with a hamburger opening a full slide-in drawer with the
+same nav below that, closing automatically on route change (covers
+browser back/forward, not just link clicks). `AdminDashboard.tsx` (the
+old tab switcher) and its client-state tab list are gone entirely, not
+kept alongside the new shell.
+
+**Auth is Clerk, not the old shared-password HMAC-cookie gate** — the
 migration this project's own code comments had been flagging as planned
 since the diesel-price editor first shipped. Two independent, both-
-required gates, checked server-side in `src/app/admin/page.tsx` before
+required gates, checked server-side in `src/app/admin/layout.tsx` before
 any dashboard content renders:
 
 1. **Clerk** (`src/proxy.ts` — Next.js 16 renamed the Edge Middleware file
@@ -769,38 +789,76 @@ tabs to a clean "not configured" message; Clerk auth and the Diesel Prices
 tab (still on `adminStore.ts`'s Upstash-Redis-backed store, untouched by
 this round) work independently of it.
 
-**Five tabs**, all in `src/components/admin/`:
-- **Overview** — pageview counts (all-time, last 7/30 days, unique
-  visitors via a locally-generated `localStorage` id, no cookies or
-  fingerprinting), leads-by-pipeline-status counts, and a top-10-pages
-  table. `/api/admin/stats` computes this with Firestore's own `.count()`
-  aggregation queries for the cheap totals and a single bounded
-  (5,000-doc) fetch of the last 30 days' pageviews for the detail that
-  actually needs the raw docs (unique visitors, per-path counts) —
-  deliberately not a `.where().orderBy()` composite-index query, which
-  would need a manual index created in the Firebase console first.
-- **Leads** — every lead from all 3 sources (Contact form, homepage CTA,
-  demo gate), filterable by source, each with a real pipeline-status
-  dropdown (`new` → `contacted` → `demo-booked` → `customer`/`lost`,
-  `src/lib/leadTypes.ts`) that `PATCH`es `/api/admin/leads` — this is the
-  concrete interpretation of "leads and sales" the dashboard implements:
-  a status field per lead, not a separate deals/revenue data model, since
-  nothing else in this marketing site (no billing, no CRM) gives a "sale"
-  any other meaning yet.
-- **Visitors** — the Visitor Intelligence 2.0 pipeline's dashboard surface
-  (see the section above): a filterable (status, minimum intent score)
-  visitor list with engagement/intent score badges, an expand-to-load
-  full profile (`/api/admin/visitors/[id]`, merging session boundaries
-  and events chronologically for the timeline), and the legacy-pageviews
-  backfill trigger.
-- **Geography** — the Phase 3 country/city breakdown (see the section
-  above): a Today/7d/30d/90d/All-time range selector, an expandable
-  country table with visitor/session/engagement/high-intent/demo-request
-  counts, no map yet.
-- **Diesel Prices** — unchanged from before, just re-gated: same
-  `adminStore.ts` A-to-C Upstash bridge, same UI, only the auth check on
-  `PUT /api/diesel-price` swapped from the old session cookie to
-  `requireAdmin()`.
+**Nine routes**, grouped in the sidebar as Analytics / Marketing /
+Intelligence / Settings, each a thin `page.tsx` (in `src/app/admin/*`)
+around a client Tab component (in `src/components/admin/`) that does the
+actual data fetching — the same Tab components as before the redesign for
+the first five, three genuinely new ones for Phase 4, two more for
+Phase 5:
+
+**Analytics:**
+- **Overview** (`/admin`) — pageview counts (all-time, last 7/30 days,
+  unique visitors via a locally-generated `localStorage` id), leads-by-
+  pipeline-status counts, and a top-10-pages table. `/api/admin/stats`
+  computes this with Firestore's own `.count()` aggregation queries for
+  the cheap totals and a single bounded (5,000-doc) fetch of the last 30
+  days' pageviews for the detail that needs raw docs.
+- **Leads** (`/admin/leads`) — every lead from all 3 sources, filterable
+  by source, each with a real pipeline-status dropdown that `PATCH`es
+  `/api/admin/leads`.
+- **Visitors** (`/admin/visitors`) — the Visitor Intelligence 2.0
+  pipeline's dashboard surface: a filterable visitor list with
+  engagement/intent score badges, an expand-to-load full profile, and
+  the legacy-pageviews backfill trigger.
+- **Geography** (`/admin/geography`) — the Phase 3 country/city
+  breakdown: a Today/7d/30d/90d/All-time range selector, an expandable
+  country table, no map yet.
+
+**Marketing (Phase 4, new this round):**
+- **Content** (`/admin/content`) — `getContentPerformance()` in
+  `visitorIntelligence.ts` joins three separate bounded fetches
+  (`page_view` events, sessions, conversion events) by page path in
+  memory: views, unique visitors, bounce rate, average engagement as a
+  landing page, conversions, conversion rate. Deterministic
+  classification badges (Traffic Winner / Engagement Winner / Conversion
+  Winner / High Bounce / "Hidden gem" for low-traffic-high-conversion
+  pages) — no "SEO Opportunity" label, since that needs every event to
+  carry its session's referrer type, which only sessions do today.
+- **Campaigns** (`/admin/campaigns`) — `getCampaignPerformance()` groups
+  sessions by channel (`utmSource — utmCampaign`, or the referrer type
+  when there's no campaign), joined to real conversion events via each
+  event's own `sessionId`. A funnel bar chart above it
+  (`getFunnelSummary()`): total visitors → had a session → engaged
+  (score ≥ 40) → converted (fired any real conversion event) → became a
+  lead — this site's own vocabulary, not the DeployFleet CRM's pipeline
+  stages, since a marketing site has no sales pipeline of its own.
+
+**Intelligence (Phase 5, new this round):**
+- **Real-Time** (`/admin/realtime`) — visitors active in the last 5
+  minutes, polled client-side every 15s (no websocket/SSE — this
+  serverless Next.js + Firestore stack has no persistent-connection
+  infra to push through), with a manual refresh button and an honest
+  "polls every 15s, not a live push feed" label rather than pretending
+  otherwise.
+- **Insights** (`/admin/insights`) — two halves. A deterministic alerts
+  feed (`getAlerts()`: high-intent visitors in the last 24h, visitors who
+  returned 3+ times, pricing-page views today, conversions today) —
+  computed fresh on every page load, **not delivered anywhere** (no
+  email/Slack/webhook; that needs a job scheduler and a notification
+  channel this project doesn't have — Vercel Cron could drive a future
+  digest, deliberately not built speculatively here). And an on-demand
+  "Generate Insight" button (`/api/admin/analytics/ai-insight`) that
+  hands an aggregated, already-anonymous summary (funnel counts, top
+  channels/pages/countries — no visitor ids, names, or contact info) to
+  the same DeepSeek/Gemini router every calculator's "AI Insight" panel
+  already uses, via a new `MARKETING_INSIGHT_SYSTEM_PROMPT` in
+  `src/lib/ai/prompts.ts`. Manual trigger only, same AI-spend discipline
+  as everywhere else in this project.
+
+**Settings:**
+- **Diesel Prices** (`/admin/diesel-prices`) — unchanged from before:
+  same `adminStore.ts` A-to-C Upstash bridge, same UI, `PUT
+  /api/diesel-price` still gated by `requireAdmin()`.
 
 `src/lib/leadTypes.ts` exists specifically so `LeadSource`/`LeadStatus`
 can be imported by both the client forms (`leads.ts`, which also pulls in
@@ -827,7 +885,17 @@ cycle, and a real Firestore write's request reaching
 `firestore.googleapis.com` (confirmed via direct HTTPS reachability, not
 assumed) are all confirmed; a real Clerk sign-in and a real Firestore
 write actually succeeding are not, since neither is possible without
-credentials only you can generate.
+credentials only you can generate. **The sidebar/drawer redesign is
+verified for routing and auth-gating only** (`curl` against every new
+`/admin/*` route confirms `src/proxy.ts`'s Clerk gate covers all of them,
+returning a 307 redirect exactly like the original single `/admin`
+route did) — the actual sidebar/drawer chrome, mobile breakpoint
+behavior, and the new Content/Campaigns/Real-Time/Insights pages'
+rendering have **not** been checked in a real, signed-in browser
+session, since Clerk sign-in isn't something this dev environment can
+complete without real credentials (same standing limitation as the
+Firestore-write caveat above). Worth a real click-test on a phone before
+considering this fully done.
 
 ## Messaging guardrails
 

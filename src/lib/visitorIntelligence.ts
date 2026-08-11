@@ -3,6 +3,7 @@ import { FieldPath, FieldValue, Timestamp, type DocumentSnapshot } from "firebas
 import { getAdminFirestore } from "./firebaseAdmin";
 import { ENGAGEMENT_WEIGHTS, INTENT_WEIGHTS, RETURNING_SESSION_ENGAGEMENT_BONUS, RETURNING_SESSION_INTENT_BONUS, clampScore, intentCategory } from "./analytics/scoring";
 import {
+  CONVERSION_EVENT_TYPES,
   EMPTY_UTM,
   classifyReferrer,
   referrerDomain as domainOf,
@@ -844,4 +845,364 @@ export async function getGeographyBreakdown(sinceIso: string | null): Promise<Ge
   }
 
   return rows.sort((a, b) => b.visitorCount - a.visitorCount);
+}
+
+const CONTENT_FETCH_LIMIT = 5000;
+
+export type ContentClassification =
+  | "traffic-winner"
+  | "engagement-winner"
+  | "conversion-winner"
+  | "high-bounce"
+  | "low-traffic-high-conversion";
+
+export interface ContentPerformanceRow {
+  pagePath: string;
+  views: number;
+  uniqueVisitors: number;
+  sessionsAsLanding: number;
+  bounceRate: number | null;
+  avgEngagement: number | null;
+  conversions: number;
+  conversionRate: number | null;
+  classifications: ContentClassification[];
+}
+
+/**
+ * Spec §13/§24 — per-page performance, deterministic first (spec §35's
+ * "do not use AI for basic arithmetic"). Three separate bounded fetches
+ * joined by pagePath in memory, same composite-index-avoidance pattern
+ * as everywhere else in this file:
+ * - page_view events -> views, unique visitors
+ * - sessions -> landing-page bounce rate, average engagement (a page's
+ *   own quality as an *entry point*, not just traffic to it)
+ * - conversion events (spec's CONVERSION_EVENT_TYPES) -> conversions,
+ *   conversion rate
+ *
+ * Classification thresholds (top-3 by views/engagement/conversion rate,
+ * >60% bounce, below-median views with above-median conversion rate) are
+ * simple and tunable, not hidden inside the UI — spec §24's own label
+ * set, minus "SEO Opportunity" (would need organic-only traffic
+ * segmentation per page, which needs every event to carry its session's
+ * referrerType — only VisitorSession does today, not VisitorEvent — not
+ * built this pass).
+ */
+export async function getContentPerformance(): Promise<ContentPerformanceRow[]> {
+  const db = getAdminFirestore();
+
+  const [pageViewsSnap, sessionsSnap, conversionsSnap] = await Promise.all([
+    db.collection(EVENTS).where("eventType", "==", "page_view").limit(CONTENT_FETCH_LIMIT).get(),
+    db.collection(SESSIONS).limit(CONTENT_FETCH_LIMIT).get(),
+    db.collection(EVENTS).where("eventType", "in", CONVERSION_EVENT_TYPES).limit(CONTENT_FETCH_LIMIT).get(),
+  ]);
+
+  const viewsByPath = new Map<string, { count: number; visitors: Set<string> }>();
+  for (const doc of pageViewsSnap.docs) {
+    const d = doc.data();
+    const path = (d.pagePath as string) ?? "unknown";
+    if (!viewsByPath.has(path)) viewsByPath.set(path, { count: 0, visitors: new Set() });
+    const entry = viewsByPath.get(path)!;
+    entry.count++;
+    if (d.visitorId) entry.visitors.add(d.visitorId as string);
+  }
+
+  const landingByPath = new Map<string, { sessions: number; bounces: number; engagementSum: number }>();
+  for (const doc of sessionsSnap.docs) {
+    const d = doc.data();
+    const path = (d.landingPage as string) ?? "unknown";
+    if (!landingByPath.has(path)) landingByPath.set(path, { sessions: 0, bounces: 0, engagementSum: 0 });
+    const entry = landingByPath.get(path)!;
+    entry.sessions++;
+    if (d.isBounce) entry.bounces++;
+    entry.engagementSum += (d.engagementScore as number) ?? 0;
+  }
+
+  const conversionsByPath = new Map<string, number>();
+  for (const doc of conversionsSnap.docs) {
+    const d = doc.data();
+    const path = (d.pagePath as string) ?? "unknown";
+    conversionsByPath.set(path, (conversionsByPath.get(path) ?? 0) + 1);
+  }
+
+  const allPaths = new Set([...viewsByPath.keys(), ...landingByPath.keys(), ...conversionsByPath.keys()]);
+  const rows: ContentPerformanceRow[] = [...allPaths].map((pagePath) => {
+    const viewEntry = viewsByPath.get(pagePath);
+    const landingEntry = landingByPath.get(pagePath);
+    const conversions = conversionsByPath.get(pagePath) ?? 0;
+    const views = viewEntry?.count ?? 0;
+
+    return {
+      pagePath,
+      views,
+      uniqueVisitors: viewEntry?.visitors.size ?? 0,
+      sessionsAsLanding: landingEntry?.sessions ?? 0,
+      bounceRate: landingEntry && landingEntry.sessions > 0 ? landingEntry.bounces / landingEntry.sessions : null,
+      avgEngagement: landingEntry && landingEntry.sessions > 0 ? Math.round(landingEntry.engagementSum / landingEntry.sessions) : null,
+      conversions,
+      conversionRate: views > 0 ? conversions / views : null,
+      classifications: [],
+    };
+  });
+
+  classifyContentRows(rows);
+  return rows.sort((a, b) => b.views - a.views);
+}
+
+function classifyContentRows(rows: ContentPerformanceRow[]): void {
+  if (rows.length === 0) return;
+  const TOP_N = 3;
+  const MIN_VIEWS_FOR_CONVERSION_RANKING = 5;
+  const MIN_SESSIONS_FOR_BOUNCE = 3;
+
+  const byViews = [...rows].sort((a, b) => b.views - a.views).slice(0, TOP_N);
+  for (const row of byViews) if (row.views > 0) row.classifications.push("traffic-winner");
+
+  const byEngagement = [...rows]
+    .filter((r) => r.avgEngagement !== null && r.sessionsAsLanding > 0)
+    .sort((a, b) => (b.avgEngagement ?? 0) - (a.avgEngagement ?? 0))
+    .slice(0, TOP_N);
+  for (const row of byEngagement) row.classifications.push("engagement-winner");
+
+  const byConversion = [...rows]
+    .filter((r) => r.views >= MIN_VIEWS_FOR_CONVERSION_RANKING && r.conversionRate !== null)
+    .sort((a, b) => (b.conversionRate ?? 0) - (a.conversionRate ?? 0))
+    .slice(0, TOP_N);
+  for (const row of byConversion) if ((row.conversionRate ?? 0) > 0) row.classifications.push("conversion-winner");
+
+  for (const row of rows) {
+    if (row.sessionsAsLanding >= MIN_SESSIONS_FOR_BOUNCE && (row.bounceRate ?? 0) > 0.6) {
+      row.classifications.push("high-bounce");
+    }
+  }
+
+  const viewsSorted = [...rows.map((r) => r.views)].sort((a, b) => a - b);
+  const conversionRatesSorted = rows
+    .map((r) => r.conversionRate)
+    .filter((r): r is number => r !== null)
+    .sort((a, b) => a - b);
+  const medianViews = viewsSorted[Math.floor(viewsSorted.length / 2)] ?? 0;
+  const medianConversionRate = conversionRatesSorted[Math.floor(conversionRatesSorted.length / 2)] ?? 0;
+  for (const row of rows) {
+    if (row.views > 0 && row.views < medianViews && (row.conversionRate ?? 0) > medianConversionRate && (row.conversionRate ?? 0) > 0) {
+      row.classifications.push("low-traffic-high-conversion");
+    }
+  }
+}
+
+export interface CampaignRow {
+  channel: string;
+  sessions: number;
+  visitors: number;
+  engagedSessions: number;
+  highIntentVisitors: number;
+  conversions: number;
+  conversionRate: number | null;
+}
+
+/** Spec §11's first/last-touch distinction, simplified to session-level attribution here — one row per channel a session actually landed through, not per visitor's lifetime first/last touch (that's already on the Visitor doc itself, shown in the Visitors tab's Acquisition section). */
+function channelKey(utmSource: string | null, utmCampaign: string | null, referrerType: ReferrerType): string {
+  if (utmCampaign) return `${utmSource ?? referrerType} — ${utmCampaign}`;
+  return referrerType;
+}
+
+/**
+ * Spec §11/§34 — campaign/source performance, joined against real
+ * conversion events via each event's own sessionId (more precise than
+ * the country-level join in getGeographyBreakdown(), since sessions
+ * carry an id events can reference directly).
+ */
+export async function getCampaignPerformance(): Promise<CampaignRow[]> {
+  const db = getAdminFirestore();
+  const [sessionsSnap, conversionsSnap, visitors] = await Promise.all([
+    db.collection(SESSIONS).limit(CONTENT_FETCH_LIMIT).get(),
+    db.collection(EVENTS).where("eventType", "in", CONVERSION_EVENT_TYPES).limit(CONTENT_FETCH_LIMIT).get(),
+    listVisitors({ limit: 3000 }),
+  ]);
+
+  const intentByVisitorId = new Map(visitors.map((v) => [v.id, v.intentScore]));
+
+  const sessionToChannel = new Map<string, string>();
+  const groups = new Map<string, { sessions: number; visitorIds: Set<string>; engagedSessions: number; conversions: number }>();
+
+  for (const doc of sessionsSnap.docs) {
+    const d = doc.data();
+    const utm = (d.utm as { utmSource?: string | null; utmCampaign?: string | null }) ?? {};
+    const channel = channelKey(utm.utmSource ?? null, utm.utmCampaign ?? null, (d.referrerType as ReferrerType) ?? "unknown");
+    sessionToChannel.set(doc.id, channel);
+
+    if (!groups.has(channel)) groups.set(channel, { sessions: 0, visitorIds: new Set(), engagedSessions: 0, conversions: 0 });
+    const group = groups.get(channel)!;
+    group.sessions++;
+    if (d.visitorId) group.visitorIds.add(d.visitorId as string);
+    if (d.isEngaged) group.engagedSessions++;
+  }
+
+  for (const doc of conversionsSnap.docs) {
+    const d = doc.data();
+    const channel = sessionToChannel.get(d.sessionId as string);
+    if (channel && groups.has(channel)) groups.get(channel)!.conversions++;
+  }
+
+  const rows: CampaignRow[] = [...groups.entries()].map(([channel, g]) => ({
+    channel,
+    sessions: g.sessions,
+    visitors: g.visitorIds.size,
+    engagedSessions: g.engagedSessions,
+    highIntentVisitors: [...g.visitorIds].filter((id) => {
+      const score = intentByVisitorId.get(id) ?? 0;
+      return intentCategory(score) === "high-intent" || intentCategory(score) === "sales-ready";
+    }).length,
+    conversions: g.conversions,
+    conversionRate: g.sessions > 0 ? g.conversions / g.sessions : null,
+  }));
+
+  return rows.sort((a, b) => b.sessions - a.sessions);
+}
+
+export interface FunnelSummary {
+  totalVisitors: number;
+  visitorsWithSession: number;
+  engagedVisitors: number;
+  convertedVisitors: number;
+  identifiedVisitors: number;
+}
+
+/**
+ * Spec §34's revenue-progression funnel, adapted to this marketing
+ * site's actual vocabulary (no pipeline stages exist here the way the
+ * DeployFleet CRM has — this is a website, not a sales pipeline):
+ * Visitors -> had a real session -> engaged (spec §8's "engaged" band,
+ * score >= 40) -> converted (fired at least one real conversion event) ->
+ * identified (became a lead, spec §18/§38).
+ */
+export async function getFunnelSummary(): Promise<FunnelSummary> {
+  const db = getAdminFirestore();
+  const [visitors, conversionsSnap] = await Promise.all([
+    listVisitors({ limit: 3000 }),
+    db.collection(EVENTS).where("eventType", "in", CONVERSION_EVENT_TYPES).limit(CONTENT_FETCH_LIMIT).get(),
+  ]);
+
+  const convertedVisitorIds = new Set(conversionsSnap.docs.map((doc) => doc.data().visitorId as string).filter(Boolean));
+
+  return {
+    totalVisitors: visitors.length,
+    visitorsWithSession: visitors.filter((v) => v.totalSessions > 0).length,
+    engagedVisitors: visitors.filter((v) => v.engagementScore >= 40).length,
+    convertedVisitors: visitors.filter((v) => convertedVisitorIds.has(v.id)).length,
+    identifiedVisitors: visitors.filter((v) => v.status === "identified").length,
+  };
+}
+
+const ACTIVE_WINDOW_MINUTES = 5;
+
+/**
+ * Spec §25 — "active visitors now." Polling-based, not a websocket/SSE
+ * push (this project has no persistent-connection infra — Vercel
+ * serverless functions and Firestore don't offer one without adding a
+ * new piece of infrastructure) — the Real-Time page's own client polls
+ * this on an interval instead. "Active" means a heartbeat/event landed
+ * within the last 5 minutes, the same window session-continuity already
+ * uses elsewhere (SESSION_INACTIVITY_MS is 30 min; this is deliberately
+ * tighter, since "active now" should mean genuinely recent, not merely
+ * "still within the same session").
+ */
+export async function getActiveVisitors(): Promise<Visitor[]> {
+  const cutoff = new Date(Date.now() - ACTIVE_WINDOW_MINUTES * 60 * 1000).toISOString();
+  const visitors = await listVisitors({ limit: 200 });
+  return visitors.filter((v) => v.lastSeenAt >= cutoff);
+}
+
+export interface AlertItem {
+  id: string;
+  severity: "info" | "notice" | "high";
+  title: string;
+  detail: string;
+}
+
+const ALERT_WINDOW_HOURS = 24;
+const HIGH_INTENT_THRESHOLD_CATEGORIES = new Set(["high-intent", "sales-ready"]);
+const REPEAT_VISITOR_SESSION_THRESHOLD = 3;
+
+/**
+ * Spec §37 — a computed alerts feed, not push notifications. Rendered
+ * fresh on every page visit rather than delivered (email/Slack/webhook)
+ * — real delivery needs a background job scheduler and a notification
+ * channel (Resend/SendGrid, a Slack webhook, etc.), neither of which
+ * exists in this project; Vercel Cron could drive a daily digest later,
+ * but that's a real infrastructure decision to make deliberately, not
+ * something to bolt on silently inside this function.
+ */
+export async function getAlerts(): Promise<AlertItem[]> {
+  const db = getAdminFirestore();
+  const since = new Date(Date.now() - ALERT_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
+  const alerts: AlertItem[] = [];
+
+  const visitors = await listVisitors({ limit: 500 });
+
+  const highIntentRecent = visitors.filter(
+    (v) => v.lastSeenAt >= since && HIGH_INTENT_THRESHOLD_CATEGORIES.has(intentCategory(v.intentScore))
+  );
+  if (highIntentRecent.length > 0) {
+    alerts.push({
+      id: "high-intent-recent",
+      severity: "high",
+      title: `${highIntentRecent.length} high-intent visitor${highIntentRecent.length === 1 ? "" : "s"} in the last 24h`,
+      detail: highIntentRecent
+        .slice(0, 5)
+        .map((v) => `${v.city ?? v.country ?? "Unknown location"} (intent ${v.intentScore})`)
+        .join(", "),
+    });
+  }
+
+  const repeatVisitors = visitors.filter((v) => v.totalSessions >= REPEAT_VISITOR_SESSION_THRESHOLD);
+  if (repeatVisitors.length > 0) {
+    alerts.push({
+      id: "repeat-visitors",
+      severity: "notice",
+      title: `${repeatVisitors.length} visitor${repeatVisitors.length === 1 ? "" : "s"} have returned ${REPEAT_VISITOR_SESSION_THRESHOLD}+ times`,
+      detail: repeatVisitors
+        .slice(0, 5)
+        .map((v) => `${v.city ?? v.country ?? "Unknown location"} (${v.totalSessions} sessions)`)
+        .join(", "),
+    });
+  }
+
+  // Two broad, unfiltered fetches (page_view; conversion types) with
+  // in-memory filtering by pagePath/time — the same composite-index
+  // avoidance as every other query in this file. A .where("pagePath",
+  // "==", ...) alongside .where("eventType", "==", ...) would need a
+  // manual composite index, which this project deliberately avoids.
+  const [pageViewsSnap, conversionsSnap] = await Promise.all([
+    db.collection(EVENTS).where("eventType", "==", "page_view").limit(CONTENT_FETCH_LIMIT).get(),
+    db.collection(EVENTS).where("eventType", "in", CONVERSION_EVENT_TYPES).limit(CONTENT_FETCH_LIMIT).get(),
+  ]);
+
+  const pricingViewsToday = pageViewsSnap.docs.filter((doc) => {
+    const d = doc.data();
+    const ts = tsToIso(d.timestamp);
+    return d.pagePath === "/pricing" && ts && ts >= since;
+  }).length;
+  if (pricingViewsToday > 0) {
+    alerts.push({
+      id: "pricing-views-today",
+      severity: "info",
+      title: `Pricing page viewed ${pricingViewsToday} time${pricingViewsToday === 1 ? "" : "s"} in the last 24h`,
+      detail: "",
+    });
+  }
+
+  const conversionsToday = conversionsSnap.docs.filter((doc) => {
+    const ts = tsToIso(doc.data().timestamp);
+    return ts && ts >= since;
+  }).length;
+  if (conversionsToday > 0) {
+    alerts.push({
+      id: "conversions-today",
+      severity: "high",
+      title: `${conversionsToday} conversion event${conversionsToday === 1 ? "" : "s"} in the last 24h`,
+      detail: "",
+    });
+  }
+
+  return alerts;
 }
