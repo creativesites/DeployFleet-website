@@ -8,7 +8,7 @@ import { UserButton } from "@clerk/nextjs";
 interface NavItem {
   href: string;
   label: string;
-  group: "Analytics" | "Marketing" | "Intelligence" | "Settings";
+  group: "CRM" | "Analytics" | "Marketing" | "Intelligence" | "Settings";
 }
 
 /**
@@ -21,6 +21,8 @@ interface NavItem {
  * one route with in-memory tab state.
  */
 const NAV_ITEMS: NavItem[] = [
+  { href: "/admin/today", label: "Today", group: "CRM" },
+  { href: "/admin/prospects", label: "Prospects", group: "CRM" },
   { href: "/admin", label: "Overview", group: "Analytics" },
   { href: "/admin/leads", label: "Leads", group: "Analytics" },
   { href: "/admin/visitors", label: "Visitors", group: "Analytics" },
@@ -32,7 +34,11 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/diesel-prices", label: "Diesel Prices", group: "Settings" },
 ];
 
-const GROUP_ORDER: NavItem["group"][] = ["Analytics", "Marketing", "Intelligence", "Settings"];
+// CRM leads — this is DeployFleet's own sales pipeline (Winston's daily
+// queue), the actual operational reason this dashboard exists, ahead of
+// Analytics (website visitor stats, a supporting signal for CRM
+// priority scoring, not the primary job).
+const GROUP_ORDER: NavItem["group"][] = ["CRM", "Analytics", "Marketing", "Intelligence", "Settings"];
 
 function isActive(pathname: string, href: string): boolean {
   return href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);

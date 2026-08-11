@@ -734,6 +734,118 @@ session's referrer type (only `VisitorSession` does today); the Content
 page's classification badges cover the rest of spec §24's label set
 without it.
 
+### DeployFleet's own CRM ("Today" and "Prospects")
+
+Everything above — Visitor Intelligence 2.0's five phases — is about
+*website visitors*. This section is different: it's DeployFleet's own
+internal sales pipeline, for DeployFleet's own team (Winston, the human
+salesperson, plus the AI-worker workflow described in the GTM Strategy /
+Sales Playbook / Operating Rhythm briefs) to run outbound and inbound
+sales against. It was scoped in an earlier planning pass in this same
+session, shelved when the Visitor Intelligence 2.0 brief arrived, and
+picked back up at explicit user direction once all five of that brief's
+phases were done — with one addition: leads promoted into this CRM now
+carry their linked visitor's real engagement/intent data from day one,
+not as a later integration.
+
+**Data model** (`src/lib/crmTypes.ts`, `src/lib/crm.ts`) — two Firestore
+collections, deliberately separate from Visitor Intelligence's
+`visitors`/`visitorSessions`/`visitorEvents`: `prospects` (the pipeline
+record — contact facts, the brief's 13-stage pipeline (0 Unqualified
+through 12 Nurture), next-action date/type/note, a provenance-tagged
+`intelligence` map) and `interactions` (one row per call/WhatsApp/note
+logged against a prospect). Every AI-derived intelligence field carries
+`{value, source, sourceType, confidence, verified, generatedAt}` —
+`sourceType` is `"ai_research"` for anything the AI brief generates,
+never silently indistinguishable from a human-confirmed fact, per the
+brief's own "human-confirmed beats AI inference beats a campaign
+assumption" hierarchy.
+
+**Phone intelligence** (`src/lib/phoneRules.ts`, unit-tested) — a
+configurable, Zambia-specific ruleset (211-218 = landline; 97/77/57 =
+Airtel; 96/76 = MTN, all as the digit-string that remains once the `260`
+country code or a local leading `0` is stripped) recommending call vs.
+WhatsApp per prospect, plus a round-number/sequential-digit pattern-
+anomaly flag that's surfaced, never used to reject a number outright —
+exactly the brief's "flag ≠ reject" distinction.
+
+**The two AI round-trips** (`src/lib/ai/prompts.ts`'s
+`SDR_BRIEF_SYSTEM_PROMPT`/`NOTE_EXTRACTION_SYSTEM_PROMPT`, reusing the
+same DeepSeek/Gemini router every other AI feature on this site uses —
+no second provider integration) both return structured JSON
+(`src/lib/ai/jsonExtract.ts` strips a stray markdown fence a model
+sometimes wraps it in, then parses; a malformed response degrades to
+"unavailable," never a crash): **"Prepare Me"**
+(`/api/admin/crm/prospects/[id]/brief`) turns a prospect's raw facts —
+plus their linked visitor's engagement score, intent score, and top
+pages, when one exists — into a fleet-tier estimate, likely pain,
+recommended wedge, recommended channel, a discovery question, and a
+priority score, written into the intelligence map. **Note parsing**
+(`/api/admin/crm/prospects/[id]/parse-note`) turns Winston's own
+freeform call/WhatsApp note into a suggested `{stage, pain,
+nextActionDate, nextActionType}` — returned for the Today tab to show as
+an editable suggestion, never applied directly; brief #35's own rule
+("no AI write path skips human confirmation") is enforced by this
+route doing no Firestore write at all, only the human-triggered
+follow-up `PATCH`/`POST` does.
+
+**The "No Orphan Lead" closure** — `syncLeadsToProspects()` promotes
+every un-promoted `leads` doc (Contact form/homepage CTA/demo gate) into
+a real prospect, idempotent via a `promotedToProspectId` marker, same
+shape as `visitorIntelligence.ts`'s own pageviews backfill. The linked
+visitor is found via a *reverse* lookup (`visitors` where `leadId ==`
+this lead's id) — `linkVisitorToLead()` only ever writes that
+relationship onto the visitor doc, never back onto the lead, so this is
+a single-field equality query, no composite index needed. When a match
+exists, the new prospect's `visitorSnapshot` carries the visitor's real
+session count, page-view count, top pages, and engagement/intent scores
+at promotion time (a snapshot, not live-refreshed — a deliberate v1
+simplification, same as several other point-in-time snapshots elsewhere
+in this project), and `priorityScore` is seeded directly from the
+visitor's `intentScore` rather than starting blank. An inbound form
+submission starts at stage 3 ("First Contact" — their own outreach *is*
+the first contact) instead of stage 1 ("Researched"), which is where the
+52-company outbound cold list (`src/lib/prospectSeedData.ts`,
+transcribed verbatim from the CSV the user provided, seeded idempotently
+by company name via `seedProspectsFromCsv()`) starts instead, since
+nobody's attempted contact with those yet.
+
+**Two screens**, both new nav items under the sidebar's CRM group
+(ahead of Analytics — see "Admin dashboard" below):
+- **Today** (`/admin/today`) — Winston's actual daily queue: prospects
+  due today or overdue, oldest first. Each card shows the AI brief (or
+  a "Prepare Me" button if none exists yet), a website-engagement badge
+  when the prospect is visitor-linked, real `tel:`/`wa.me` action links,
+  outcome buttons (no answer/gatekeeper/wrong person/right
+  person/meaningful conversation/demo booked/other — spec's own
+  "attempted ≠ meaningful" distinction, kept as a separate field from
+  pipeline stage), a note field with an optional AI-parse step, and
+  editable stage/next-action fields Winston confirms before the
+  interaction is logged and the prospect record updates. This is the
+  actual vertical slice: prospect → brief → action → note → AI
+  extraction → confirm → next action, closing the loop the original
+  planning pass scoped and never built until now.
+- **Prospects** (`/admin/prospects`) — the full pipeline, filterable by
+  stage/source, expand-to-see-everything (facts, phone classification,
+  AI brief, linked visitor snapshot, full interaction history), and the
+  "Seed outbound list + sync leads" trigger button.
+
+**Deliberately not built, per the original vertical-slice-first
+agreement:** a Pipeline/Kanban board view, a Targets/weekly-scoreboard
+screen against the Operating Rhythm brief's benchmarks, a separate
+`aiJobs` observability collection (the two AI round-trips aren't logged
+anywhere beyond their effect on the prospect record), campaign tracking
+("DeployFleet — Today's 10" as a real entity), a Sales Coach call-
+analysis feature, and a manual "add prospect" form (every prospect today
+comes from either the CSV seed or a promoted lead). All from the
+brief's own P1 backlog, not the P0 vertical slice — worth returning to
+once the core loop above has been used for real. **Not verified in a
+live signed-in browser**, same standing caveat as the redesign above —
+routing/auth-gating confirmed via curl (`/admin/today`'s first hit 404s
+in Next.js dev mode before Turbopack compiles it on-demand, a real dev-
+mode quirk, not a bug — the very next request correctly 307s to sign-in,
+and the production build lists the route correctly).
+
 ### Admin dashboard (`/admin`)
 
 **Redesigned as a sidebar-navigated app, not a single route with
@@ -789,12 +901,17 @@ tabs to a clean "not configured" message; Clerk auth and the Diesel Prices
 tab (still on `adminStore.ts`'s Upstash-Redis-backed store, untouched by
 this round) work independently of it.
 
-**Nine routes**, grouped in the sidebar as Analytics / Marketing /
+**Eleven routes**, grouped in the sidebar as CRM / Analytics / Marketing /
 Intelligence / Settings, each a thin `page.tsx` (in `src/app/admin/*`)
 around a client Tab component (in `src/components/admin/`) that does the
-actual data fetching — the same Tab components as before the redesign for
-the first five, three genuinely new ones for Phase 4, two more for
-Phase 5:
+actual data fetching. CRM leads the group order — DeployFleet's own
+sales pipeline is the actual operational reason this dashboard exists,
+ahead of the website-visitor analytics below it.
+
+**CRM (DeployFleet's own team, not website visitors — see the section
+above):**
+- **Today** (`/admin/today`) — Winston's daily queue.
+- **Prospects** (`/admin/prospects`) — the full pipeline, browse/seed/sync.
 
 **Analytics:**
 - **Overview** (`/admin`) — pageview counts (all-time, last 7/30 days,
