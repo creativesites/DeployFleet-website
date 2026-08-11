@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import DemoForm from "@/components/DemoForm";
-import { whatsappHref } from "@/lib/nav";
+import TrackedWhatsAppLink from "@/components/analytics/TrackedWhatsAppLink";
 
 export const metadata: Metadata = {
   title: "Contact",
@@ -21,9 +21,9 @@ export default function ContactPage() {
             the same day. Prefer to leave your details instead? Use the form.
           </p>
 
-          <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="btn-primary mt-8 inline-flex">
+          <TrackedWhatsAppLink location="contact_page_hero" className="btn-primary mt-8 inline-flex">
             Chat on WhatsApp
-          </a>
+          </TrackedWhatsAppLink>
         </div>
 
         <DemoForm

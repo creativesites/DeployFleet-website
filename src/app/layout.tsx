@@ -6,7 +6,8 @@ import "./globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import WhatsAppFloatingButton from "@/components/WhatsAppFloatingButton";
-import PageviewTracker from "@/components/PageviewTracker";
+import FingerprintBoundary from "@/components/analytics/FingerprintBoundary";
+import VisitorTracker from "@/components/analytics/VisitorTracker";
 
 // ClerkProvider throws if NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is missing —
 // only wrap with it once real Clerk keys exist, so the rest of the site
@@ -50,7 +51,9 @@ function Body({ children }: { children: ReactNode }) {
       <main className="flex-1">{children}</main>
       <Footer />
       <WhatsAppFloatingButton />
-      <PageviewTracker />
+      <FingerprintBoundary>
+        <VisitorTracker />
+      </FingerprintBoundary>
     </body>
   );
 }

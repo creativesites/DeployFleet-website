@@ -4,13 +4,15 @@ import { useState } from "react";
 import { UserButton } from "@clerk/nextjs";
 import OverviewTab from "./OverviewTab";
 import LeadsTab from "./LeadsTab";
+import VisitorsTab from "./VisitorsTab";
 import DieselPricesTab from "./DieselPricesTab";
 
-type Tab = "overview" | "leads" | "diesel";
+type Tab = "overview" | "leads" | "visitors" | "diesel";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "leads", label: "Leads" },
+  { id: "visitors", label: "Visitors" },
   { id: "diesel", label: "Diesel Prices" },
 ];
 
@@ -45,6 +47,7 @@ export default function AdminDashboard({ firebaseAdminConfigured }: { firebaseAd
       <div className="mt-8">
         {tab === "overview" && <OverviewTab firebaseAdminConfigured={firebaseAdminConfigured} />}
         {tab === "leads" && <LeadsTab firebaseAdminConfigured={firebaseAdminConfigured} />}
+        {tab === "visitors" && <VisitorsTab firebaseAdminConfigured={firebaseAdminConfigured} />}
         {tab === "diesel" && <DieselPricesTab />}
       </div>
     </div>

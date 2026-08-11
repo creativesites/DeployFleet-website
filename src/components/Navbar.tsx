@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
 import { primaryNav, productLinks, whatsappHref } from "@/lib/nav";
+import { analytics } from "@/lib/analytics/client";
 
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -71,7 +72,13 @@ export default function Navbar() {
         </div>
 
         <div className="hidden items-center gap-3 lg:flex">
-          <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="btn-secondary text-sm">
+          <a
+            href={whatsappHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => void analytics.conversion("whatsapp_click", { location: "navbar_desktop" })}
+            className="btn-secondary text-sm"
+          >
             Chat on WhatsApp
           </a>
           <Link href="/demo" className="btn-primary text-sm">
@@ -112,7 +119,13 @@ export default function Navbar() {
             ))}
           </div>
           <div className="mt-4 flex flex-col gap-3">
-            <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="btn-secondary w-full">
+            <a
+              href={whatsappHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => void analytics.conversion("whatsapp_click", { location: "navbar_mobile" })}
+              className="btn-secondary w-full"
+            >
               Chat on WhatsApp
             </a>
             <Link href="/demo" className="btn-primary w-full" onClick={() => setMobileOpen(false)}>

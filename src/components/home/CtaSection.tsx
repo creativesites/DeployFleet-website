@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { WHATSAPP_NUMBER, whatsappHref } from "@/lib/nav";
 import { submitLead } from "@/lib/leads";
+import { analytics } from "@/lib/analytics/client";
 
 export default function CtaSection() {
   const [name, setName] = useState("");
@@ -17,6 +18,7 @@ export default function CtaSection() {
     // Fire-and-forget — never blocks the WhatsApp handoff below, which
     // stays the real, always-working submission path.
     submitLead({ name, company, phone, source: "homepage-cta" });
+    void analytics.conversion("demo_request", { source: "homepage-cta" });
 
     window.open(
       `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`,
@@ -43,6 +45,7 @@ export default function CtaSection() {
               href={whatsappHref}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => void analytics.conversion("whatsapp_click", { location: "homepage_cta_section" })}
               className="btn-secondary inline-flex"
             >
               Prefer WhatsApp? Chat with us directly

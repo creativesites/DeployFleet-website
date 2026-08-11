@@ -1,4 +1,7 @@
+"use client";
+
 import { whatsappHref } from "@/lib/nav";
+import { analytics } from "@/lib/analytics/client";
 
 export default function WhatsAppFloatingButton() {
   return (
@@ -7,6 +10,7 @@ export default function WhatsAppFloatingButton() {
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Chat with DeployFleet on WhatsApp"
+      onClick={() => void analytics.conversion("whatsapp_click", { location: "floating_button" })}
       className="fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-[0_12px_30px_-8px_rgba(37,211,102,0.55)] transition-transform hover:scale-105 sm:bottom-8 sm:right-8"
     >
       <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

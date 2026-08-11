@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { analytics } from "@/lib/analytics/client";
 
 type PanelState = "idle" | "loading" | "success" | "unavailable";
 
@@ -26,6 +27,14 @@ export function AiInsightPanel({
   const [text, setText] = useState("");
 
   async function fetchInsight() {
+    // Wired here rather than in each of the 9 calculators individually:
+    // this shared panel is the one discrete, intentional action available
+    // in an otherwise live-recalculating (useMemo-on-every-keystroke) UI
+    // with no explicit "Calculate"/submit button to hang calculator_start/
+    // calculator_complete off of — "asked for the AI insight" is treated
+    // as the calculator_complete signal (spec §33), a deliberate proxy,
+    // not a literal form-completion event.
+    void analytics.conversion("calculator_complete", { feature });
     setState("loading");
     try {
       const response = await fetch("/api/ai/complete", {

@@ -48,6 +48,18 @@ service cloud.firestore {
         && (!("referrer" in request.resource.data) || request.resource.data.referrer == null || (request.resource.data.referrer is string && request.resource.data.referrer.size() <= 500));
     }
 
+    // visitors / visitorSessions / visitorEvents (Visitor Intelligence
+    // 2.0) deliberately have NO rules here, unlike leads/pageviews above.
+    // Every write to these three collections goes through
+    // /api/analytics/* (Next.js Route Handlers using the Admin SDK via
+    // src/lib/visitorIntelligence.ts), never the client SDK directly —
+    // this is what makes the server-side trust model possible (never
+    // trusting a browser-supplied visitorId/geo/device/score, and doing
+    // atomic FieldValue.increment() counter math server-side instead of
+    // needing rules that can validate arbitrary client-sent deltas). The
+    // catch-all rule below already denies all client read/write to them,
+    // same trust boundary as companies/activities (the CRM collections).
+
     // Everything else in this database is admin-only, server-side access.
     match /{document=**} {
       allow read, write: if false;

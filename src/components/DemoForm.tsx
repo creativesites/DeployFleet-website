@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { WHATSAPP_NUMBER } from "@/lib/nav";
 import { submitLead, type LeadSource } from "@/lib/leads";
+import { analytics } from "@/lib/analytics/client";
 
 type DemoFormProps = {
   submitLabel?: string;
@@ -38,6 +39,7 @@ export default function DemoForm({
     // Fire-and-forget — never blocks the WhatsApp handoff below, which
     // stays the real, always-working submission path.
     submitLead({ name, company, phone, fleetSize, source });
+    void analytics.conversion(source === "contact-form" ? "contact_request" : "demo_request", { source });
 
     window.open(
       `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`,

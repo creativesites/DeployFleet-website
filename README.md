@@ -579,12 +579,13 @@ as a future decision: `DemoGate.tsx` shows the lead form first (`source:
 "demo-gate"`), and only reveals `LIVE_DEMO_URL` after a real submission —
 the unlock persists per-browser via `useDemoUnlocked()` (`localStorage`,
 the same `useSyncExternalStore` pattern as `useSelectedCountry`), so a
-returning visitor isn't re-gated. A lightweight `PageviewTracker` (mounted
-once in the root layout) logs one Firestore doc per client-side navigation
-for the admin dashboard's visitor-stats tab — not a replacement for the
-Firebase Analytics `measurementId` the project's own Firebase config
-already carries, just an internal counter simple enough to read straight
-out of the dashboard.
+returning visitor isn't re-gated. Page-view tracking itself has since been
+superseded by the real Visitor Intelligence 2.0 pipeline below — the
+original `PageviewTracker`/`logPageview()` (one bare Firestore doc per
+navigation, no sessions, no UTM, no device/geo) has been removed; the
+`pageviews` collection it wrote stays in Firestore as read-only history
+and is folded into real visitor records by the Visitors tab's backfill
+action, not deleted.
 
 **Security model, not an afterthought:** `firestore.rules` (repo root)
 allows unauthenticated `create` on `leads`/`pageviews` only — field-
@@ -610,6 +611,97 @@ done yet as of this writing**, confirmed by a direct REST call returning
 HTTPS to `firestore.googleapis.com` from this dev environment works
 fine), then paste `firestore.rules` into the Rules tab and Publish (or
 `firebase deploy --only firestore:rules` with the CLI).
+
+### Visitor Intelligence 2.0
+
+A real first-party visitor/session/event analytics layer, built by
+evolving the old bare `pageviews` counter above rather than replacing it
+outright — audited first (see git history around this section), then
+extended: one canonical pipeline, not two competing tracking systems.
+
+**Data model** (`src/lib/visitorTypes.ts`, `src/lib/visitorIntelligence.ts`)
+— three Firestore collections: `visitors` (one doc per browser/device,
+first/last-touch attribution, engagement/intent scores, device/geo),
+`visitorSessions` (30-minute-inactivity session boundaries, landing/exit
+page, UTM/referrer attribution), `visitorEvents` (page views, CTA/
+WhatsApp/phone clicks, form steps, calculator completions — a fixed
+`EventType` union, not free text). All three are server-managed only —
+every write goes through `/api/analytics/*` (Next.js Route Handlers using
+the Admin SDK), never the client Firestore SDK directly, which is what
+makes the trust model below possible; `firestore.rules` has no rules for
+them at all, relying on its existing catch-all deny.
+
+**Server-side trust model (Fingerprint), not a client-trusted id.** The
+browser gets a Fingerprint `event_id` (`@fingerprint/react`'s
+`useVisitorData()`, wired in `src/components/analytics/VisitorTracker.tsx`
+inside `FingerprintBoundary.tsx` — both gracefully no-op, exactly like the
+Clerk provider, when `NEXT_PUBLIC_FINGERPRINT_PUBLIC_API_KEY` isn't set)
+and nothing else — no `visitorId`, no confidence score, no device/bot
+signal it could tamper with. `/api/analytics/identify` takes that
+`event_id`, resolves it server-side via `src/lib/fingerprintServer.ts`
+(the official `@fingerprint/node-sdk` Server API client, field names read
+directly from that package's own generated OpenAPI types rather than a
+guessed response shape), and only then writes the trusted result. Without
+a real key, `identifyVisitor()` falls back to the pre-existing
+localStorage id (`getLegacyVisitorId()` in `client.ts`, same storage key
+the old `PageviewTracker` used) so a returning visitor on the same browser
+still resolves to the same visitor doc — degraded, not broken.
+
+**Client SDK** (`src/lib/analytics/client.ts`) — one singleton
+(`analytics.identify/page/track/conversion/endSession`), not hand-rolled
+`fetch()` calls scattered through components. `page()` resumes an existing
+session server-side if it's still within the inactivity window, otherwise
+starts a new one; a 10-15s heartbeat (`document.visibilityState`-gated,
+stops when hidden) accumulates real active-time instead of the classic
+`nextPageTimestamp - pageViewTimestamp` inaccuracy; `endSession()` fires
+via `navigator.sendBeacon` on `pagehide`/tab-hide so it survives a closing
+tab. Deliberate v1 simplification: "visible" is treated as "active" (no
+separate mouse/keyboard idle detection yet).
+
+**Scoring** (`src/lib/analytics/scoring.ts`) — engagement and intent are
+two separate 0-100 scores with their own weight tables (page views,
+calculator use, pricing views, WhatsApp/phone clicks, demo requests, a
+returning-session bonus), accumulated incrementally per event via
+Firestore `FieldValue.increment()` rather than recomputed from full event
+history on every hit — cheap, at the cost of not being retroactively
+recalculable if the weights ever change. `engagementBand()`/
+`intentCategory()` turn the raw score into the labels the Visitors tab
+shows (Low/Moderate/Engaged/Highly Engaged/High Intent; Cold/Warm/
+Interested/High Intent/Sales Ready).
+
+**Conversion events wired so far:** WhatsApp clicks (the floating button
+and both Navbar links — global, every page), demo/contact form
+submissions (`DemoForm`/`CtaSection`, split into `demo_request` vs.
+`contact_request` by the form's own `source` prop), and a
+`calculator_complete` proxy fired from the shared `AiInsightPanel`'s "Get
+AI Insight" button (the one discrete, intentional action available across
+all 9 calculators, which otherwise live-recalculate on every keystroke
+with no explicit submit button to hang a real start/complete pair off
+of — documented as a deliberate proxy, not a literal form-completion
+event). **Deliberately not yet wired:** the many one-off WhatsApp CTAs on
+individual marketing pages (about/pricing/solutions/resources/product/*)
+— `src/components/analytics/TrackedWhatsAppLink.tsx` exists as the
+drop-in replacement for when that's worth doing; only `/contact`'s hero
+CTA uses it so far. No `tel:`/`mailto:` links exist anywhere in this
+codebase (WhatsApp is the only contact channel), so `phone_click`/
+`email_click` have no call sites to wire.
+
+**Backfill, not data loss:** `backfillVisitorsFromPageviews()`
+(idempotent, marker-field pattern — same shape as `crm.ts`'s
+`syncLeadsToCompanies()` from an earlier session, triggered on demand
+rather than via a Cloud Function/Blaze billing plan) groups the legacy
+`pageviews` docs by their old localStorage id and folds them into real
+`visitors` records — a "Backfill legacy pageviews" button in the Visitors
+tab, not an automatic migration, since it's a heavier one-time operation.
+
+**Not yet built (Phase 2+ of the spec this was built against, tracked but
+out of scope for this pass):** Google Maps/geographic dashboard, the SEO
+opportunity engine, the AI marketing-intelligence layer (would reuse the
+existing DeepSeek/Gemini router — same one the calculators' "AI Insight"
+panels already use), real-time active-visitor view, and configurable
+alerts. The Visitors tab (list + expandable per-visitor timeline) is the
+only dashboard surface for this data so far — no dedicated Visitor Profile
+page, Geography tab, or Content Performance report yet.
 
 ### Admin dashboard (`/admin`)
 
@@ -642,12 +734,12 @@ Firestore access via a Firebase service account
 `FIREBASE_ADMIN_PRIVATE_KEY`), independent of Clerk entirely (Clerk
 proves identity; the Admin SDK is a separate, unrelated credential for
 data access — no Clerk↔Firebase token-exchange integration was needed
-or built). Missing this only degrades the Overview/Leads tabs to a clean
+or built). Missing this only degrades the Overview/Leads/Visitors tabs to a clean
 "not configured" message; Clerk auth and the Diesel Prices tab (still on
 `adminStore.ts`'s Upstash-Redis-backed store, untouched by this round)
 work independently of it.
 
-**Three tabs**, all in `src/components/admin/`:
+**Four tabs**, all in `src/components/admin/`:
 - **Overview** — pageview counts (all-time, last 7/30 days, unique
   visitors via a locally-generated `localStorage` id, no cookies or
   fingerprinting), leads-by-pipeline-status counts, and a top-10-pages
@@ -665,6 +757,12 @@ work independently of it.
   a status field per lead, not a separate deals/revenue data model, since
   nothing else in this marketing site (no billing, no CRM) gives a "sale"
   any other meaning yet.
+- **Visitors** — the Visitor Intelligence 2.0 pipeline's dashboard surface
+  (see the section above): a filterable (status, minimum intent score)
+  visitor list with engagement/intent score badges, an expand-to-load
+  per-visitor timeline (`/api/admin/visitors/[id]`, merging session
+  boundaries and events chronologically), and the legacy-pageviews
+  backfill trigger.
 - **Diesel Prices** — unchanged from before, just re-gated: same
   `adminStore.ts` A-to-C Upstash bridge, same UI, only the auth check on
   `PUT /api/diesel-price` swapped from the old session cookie to
