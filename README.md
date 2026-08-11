@@ -846,6 +846,20 @@ in Next.js dev mode before Turbopack compiles it on-demand, a real dev-
 mode quirk, not a bug — the very next request correctly 307s to sign-in,
 and the production build lists the route correctly).
 
+**This CRM is the foundation for a much bigger next step, planned but
+not yet built:** [`docs/ai-marketing-os-architecture.md`](docs/ai-marketing-os-architecture.md)
+is a full architecture document for turning it into an AI-native
+Marketing OS — an AI Inbox for pasting AI-workforce conversations that
+self-extracts facts/tasks/decisions, dedicated per-prospect intelligence
+pages with per-employee tabs, an AI Workforce Team page, a Decision audit
+trail, a Reality/Reconciliation engine for stale-data detection, a
+layered context-cache architecture (reusing the Upstash Redis already
+connected for diesel prices), and — once that foundation is solid — an
+AI Orchestrator with real tool-calling and an anti-procrastination
+layer. Explicitly phased (Phase 0 quick CRM-completeness wins through
+Phase 3), grounded against what actually exists in this codebase today,
+not implemented yet — read it before starting any of that work.
+
 ### Admin dashboard (`/admin`)
 
 **Redesigned as a sidebar-navigated app, not a single route with
