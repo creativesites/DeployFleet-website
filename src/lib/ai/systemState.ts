@@ -1,6 +1,6 @@
 import "server-only";
 import { getStore } from "@/lib/adminStore";
-import { getCampaignScoreboard, getWeeklyScoreboard, listCampaigns, listProspects } from "@/lib/crm";
+import { getCampaignScoreboard, getWeeklyScoreboard, listCampaigns, listProspects, listWhatsAppConversations } from "@/lib/crm";
 
 /**
  * Phase 2 §8.3 — a single, always-current summary the Orchestrator and
@@ -35,6 +35,8 @@ export interface SystemState {
   biggestBottleneck: string | null;
   topProspect: { id: string; name: string; opportunityScore: number } | null;
   topRisk: { flag: string; count: number } | null;
+  /** docs/whatsapp-intelligence-architecture.md §12 — Command Center's WhatsApp tile + Daily Rhythm's brief content. */
+  whatsappAwaitingResponseCount: number;
 }
 
 function todayIso(): string {
@@ -50,10 +52,11 @@ function mostRecentMondayIso(): string {
 }
 
 async function computeSystemState(): Promise<SystemState> {
-  const [campaigns, prospects, weekly] = await Promise.all([
+  const [campaigns, prospects, weekly, awaitingWhatsApp] = await Promise.all([
     listCampaigns(),
     listProspects({ includeArchived: false }),
     getWeeklyScoreboard(mostRecentMondayIso()),
+    listWhatsAppConversations({ requiresResponse: true }),
   ]);
 
   const activeCampaign = campaigns.find((c) => c.status === "active") ?? null;
@@ -72,11 +75,21 @@ async function computeSystemState(): Promise<SystemState> {
 
   const overdueProspects = prospects.filter((p) => p.nextActionDate !== null && p.nextActionDate < today);
 
+  // §12 — Winston's own morning-brief example, as one more `if` branch:
+  // a verified-WhatsApp, high-opportunity prospect nobody has messaged yet.
+  const readyWhatsAppProspect = prospects
+    .filter((p) => p.whatsappStatus === "verified" && !p.whatsappOptedOut && (p.opportunityScore ?? 0) >= 60)
+    .sort((a, b) => (b.opportunityScore ?? 0) - (a.opportunityScore ?? 0))[0];
+
   let biggestBottleneck: string | null = null;
   if (todayAttempts < weekly.targetAttemptsPerDay / 2) {
     biggestBottleneck = `Only ${todayAttempts}/${weekly.targetAttemptsPerDay} outbound attempts logged today — pace is behind.`;
   } else if (overdueProspects.length > 0) {
     biggestBottleneck = `${overdueProspects.length} prospect${overdueProspects.length === 1 ? "" : "s"} have an overdue next action.`;
+  } else if (awaitingWhatsApp.length > 0) {
+    biggestBottleneck = `${awaitingWhatsApp.length} WhatsApp conversation${awaitingWhatsApp.length === 1 ? "" : "s"} awaiting a response.`;
+  } else if (readyWhatsAppProspect) {
+    biggestBottleneck = `${readyWhatsAppProspect.name} is WhatsApp-verified with a high opportunity score — no outreach made yet.`;
   }
 
   const topProspect = prospects
@@ -103,6 +116,7 @@ async function computeSystemState(): Promise<SystemState> {
     biggestBottleneck,
     topProspect: topProspect ? { id: topProspect.id, name: topProspect.name, opportunityScore: topProspect.opportunityScore } : null,
     topRisk,
+    whatsappAwaitingResponseCount: awaitingWhatsApp.length,
   };
 }
 
@@ -126,6 +140,9 @@ export function formatSystemState(state: SystemState): string {
       : "No active campaign.",
     `Today: ${state.todayAttempts}/${state.targetAttemptsPerDay} attempts, ${state.todayMeaningful}/${state.targetMeaningfulPerDay} meaningful interactions.`,
     `${state.overdueProspectCount} prospect(s) overdue on their next action.`,
+    state.whatsappAwaitingResponseCount > 0
+      ? `${state.whatsappAwaitingResponseCount} WhatsApp conversation(s) awaiting a response.`
+      : null,
     state.biggestBottleneck ? `Biggest bottleneck: ${state.biggestBottleneck}` : "No major bottleneck flagged right now.",
     state.topProspect ? `Top prospect by opportunity: ${state.topProspect.name} (score ${state.topProspect.opportunityScore}).` : null,
     state.topRisk ? `Most common risk flag: "${state.topRisk.flag}" (${state.topRisk.count} prospects).` : null,

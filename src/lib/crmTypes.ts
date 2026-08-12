@@ -167,6 +167,19 @@ export interface Prospect {
   updatedAt: string;
   /** Brief #6's Friday Pipeline Cleanse — archives, never deletes. */
   archivedAt: string | null;
+
+  /**
+   * WhatsApp Intelligence, docs/whatsapp-intelligence-architecture.md §5.1
+   * / §6. Freshness-bounded, never permanent truth — see checkAvailability()
+   * in gatewayClient.ts and POST /api/admin/crm/whatsapp/verify. "unknown"
+   * is the default for every prospect until a real check runs — never
+   * inferred from phoneClassification's rule-based guess.
+   */
+  whatsappStatus: WhatsAppNumberStatus;
+  whatsappVerifiedAt: string | null;
+  whatsappJid: string | null;
+  /** §11 — a message matching an opt-out pattern sets this permanently; the send path refuses unconditionally once set, no override. */
+  whatsappOptedOut: boolean;
 }
 
 /**
@@ -214,7 +227,7 @@ export interface Fact {
 
 /** Phase 1 §4.3 — generalizes beyond Prospect.nextActionDate/nextActionType (which stay — /admin/today still reads them) into a real, AI-creatable task entity not always prospect-shaped. */
 export type TaskStatus = "open" | "in_progress" | "done" | "cancelled";
-export type TaskCreatedBy = "human" | "ai_orchestrator" | "ai_reconciliation" | "ai_inbox_extraction";
+export type TaskCreatedBy = "human" | "ai_orchestrator" | "ai_reconciliation" | "ai_inbox_extraction" | "whatsapp_intelligence";
 export type TaskPriority = "low" | "medium" | "high";
 
 export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
@@ -287,7 +300,8 @@ export type InboxSourceType =
   | "ai_content"
   | "ai_analyst"
   | "winston_direct"
-  | "call_transcript";
+  | "call_transcript"
+  | "whatsapp_conversation";
 
 export const INBOX_SOURCE_TYPE_LABEL: Record<InboxSourceType, string> = {
   ai_sdr: "AI SDR",
@@ -299,6 +313,7 @@ export const INBOX_SOURCE_TYPE_LABEL: Record<InboxSourceType, string> = {
   ai_analyst: "AI Analyst",
   winston_direct: "Winston (direct note)",
   call_transcript: "Call transcript",
+  whatsapp_conversation: "WhatsApp conversation",
 };
 
 export interface ExtractedFact {
@@ -392,9 +407,13 @@ export type AuditEventType =
   | "reconciliation_flag_raised"
   | "ai_brief_generated"
   | "inbox_entry_processed"
-  | "email_sent";
+  | "email_sent"
+  | "whatsapp_verified"
+  | "whatsapp_sent"
+  | "whatsapp_message_received"
+  | "whatsapp_conversation_state_changed";
 
-export type AuditEventActor = "winston" | "ai_orchestrator" | "ai_reconciliation" | "ai_inbox_extraction";
+export type AuditEventActor = "winston" | "ai_orchestrator" | "ai_reconciliation" | "ai_inbox_extraction" | "whatsapp_intelligence";
 
 export interface AuditEvent {
   id: string;
@@ -460,6 +479,158 @@ export interface EmailSend {
   template: EmailTemplateKey;
   campaignId: string | null;
   status: EmailSendStatus;
+  errorMessage: string | null;
+  sentAt: string;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp Intelligence & Outreach Automation
+// docs/whatsapp-intelligence-architecture.md — Phase 4 of the AI Marketing
+// OS. Same conventions as every collection above: createdAt/updatedAt as
+// Timestamp at the storage layer, ISO strings at this type layer, flat
+// collections filtered in memory (§15's resolved "flat vs nested" call).
+// ---------------------------------------------------------------------------
+
+/** §6 — never permanent truth; re-checked on a freshness window (30 days default) and always immediately before outreach regardless of staleness. */
+export type WhatsAppNumberStatus = "verified" | "unavailable" | "unknown";
+
+/** §5.2 — a prospect can have more than one real-world contact (reception, ops manager, owner), each with their own number/WhatsApp status. */
+export interface ProspectContact {
+  id: string;
+  prospectId: string;
+  name: string | null;
+  role: string | null;
+  phone: string;
+  whatsappStatus: WhatsAppNumberStatus;
+  whatsappVerifiedAt: string | null;
+  whatsappJid: string | null;
+  isPrimary: boolean;
+  discoveredVia: "manual" | "whatsapp_referral" | "ai_inbox_extraction";
+  createdAt: string;
+}
+
+/** §9 — Winston's own state machine, adopted as specified. Purely observational relative to Prospect.stage (§15) — nothing here ever writes the pipeline stage automatically. */
+export type ConversationState =
+  | "new"
+  | "outreach_sent"
+  | "awaiting_response"
+  | "responded"
+  | "qualification"
+  | "discovery"
+  | "interested"
+  | "demo_requested"
+  | "demo_scheduled"
+  | "proposal"
+  | "negotiation"
+  | "won"
+  | "lost"
+  | "nurture"
+  | "closed"
+  | "waiting_for_human_action";
+
+export const CONVERSATION_STATE_LABEL: Record<ConversationState, string> = {
+  new: "New",
+  outreach_sent: "Outreach sent",
+  awaiting_response: "Awaiting response",
+  responded: "Responded",
+  qualification: "Qualification",
+  discovery: "Discovery",
+  interested: "Interested",
+  demo_requested: "Demo requested",
+  demo_scheduled: "Demo scheduled",
+  proposal: "Proposal",
+  negotiation: "Negotiation",
+  won: "Won",
+  lost: "Lost",
+  nurture: "Nurture",
+  closed: "Closed",
+  waiting_for_human_action: "Waiting on Winston",
+};
+
+export interface WhatsAppConversation {
+  id: string;
+  prospectId: string;
+  prospectContactId: string | null;
+  whatsappJid: string;
+  state: ConversationState;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  unreadCount: number;
+  requiresResponse: boolean;
+  responseUrgency: "low" | "medium" | "high" | "urgent" | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type WhatsAppMessageSenderType = "prospect" | "winston" | "ai_draft";
+
+export interface WhatsAppMessage {
+  id: string;
+  conversationId: string;
+  waMessageId: string;
+  senderType: WhatsAppMessageSenderType;
+  body: string | null;
+  mediaUrl: string | null;
+  mediaMimeType: string | null;
+  whatsappTimestamp: string;
+  createdAt: string;
+}
+
+/** §10 — a fixed, hand-written registry, never a freeform LLM-classified string. */
+export type BuyingSignalType =
+  | "pricing_inquiry"
+  | "demo_request"
+  | "fleet_size_disclosed"
+  | "internal_referral"
+  | "pain_point_admission"
+  | "explicit_commitment"
+  | "competitor_mentioned"
+  | "budget_mentioned";
+
+export const BUYING_SIGNAL_LABEL: Record<BuyingSignalType, string> = {
+  pricing_inquiry: "Pricing inquiry",
+  demo_request: "Demo request",
+  fleet_size_disclosed: "Fleet size disclosed",
+  internal_referral: "Internal referral",
+  pain_point_admission: "Pain point admission",
+  explicit_commitment: "Explicit commitment",
+  competitor_mentioned: "Competitor mentioned",
+  budget_mentioned: "Budget mentioned",
+};
+
+export interface WhatsAppEntity {
+  type: string;
+  value: string;
+}
+
+export interface WhatsAppMessageAnalysis {
+  id: string;
+  messageId: string;
+  sentiment: "positive" | "negative" | "neutral" | "mixed";
+  intentCategory: string;
+  intentConfidence: number;
+  entities: WhatsAppEntity[];
+  buyingSignals: BuyingSignalType[];
+  requiresResponse: boolean;
+  responseUrgency: "low" | "medium" | "high" | "urgent";
+  summary: string;
+  suggestedConversationState: ConversationState | null;
+  analyzedAt: string;
+}
+
+/** §5.4/§11 — modeled directly on EmailSend: every attempt logged, only successful sends count against the daily cap. */
+export type WhatsAppSendStatus = "sent" | "failed";
+
+export interface WhatsAppSend {
+  id: string;
+  prospectId: string;
+  conversationId: string | null;
+  recipientJid: string;
+  messageBody: string;
+  isFirstOutreach: boolean;
+  approvedBy: "winston";
+  status: WhatsAppSendStatus;
   errorMessage: string | null;
   sentAt: string;
   createdAt: string;

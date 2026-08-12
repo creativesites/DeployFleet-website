@@ -9,6 +9,7 @@ const ACTOR_LABEL: Record<AuditEventActor, string> = {
   ai_orchestrator: "AI Orchestrator",
   ai_reconciliation: "Reality Engine",
   ai_inbox_extraction: "AI Inbox",
+  whatsapp_intelligence: "WhatsApp Intelligence",
 };
 
 /** Phase 2 §8.5 — a flat, filterable, chronological read of every AuditEvent every prior phase already writes to. */

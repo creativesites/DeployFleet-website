@@ -17,6 +17,7 @@ interface SystemState {
   biggestBottleneck: string | null;
   topProspect: { id: string; name: string; opportunityScore: number } | null;
   topRisk: { flag: string; count: number } | null;
+  whatsappAwaitingResponseCount: number;
 }
 
 interface AiEmployeeLite {
@@ -51,6 +52,11 @@ function isHighStakesStageChange(p: OrchestratorProposal): boolean {
   if (p.tool !== "update_prospect") return false;
   const stage = Number(p.args.stage);
   return Number.isFinite(stage) && stage >= 5;
+}
+
+/** docs/whatsapp-intelligence-architecture.md §8 — a WhatsApp draft/send proposal is never one-click-approvable from here: Winston reviews the exact text and sends it himself from SendWhatsAppPanel on the prospect's page, which is the only place that actually calls the send route. */
+function isWhatsAppProposal(p: OrchestratorProposal): boolean {
+  return p.tool === "draft_whatsapp_message" || p.tool === "send_whatsapp_message";
 }
 
 /** Phase 2 §8.4 — the AI Command Center. Sits above the existing Visitor Intelligence Overview stats on /admin, not a new route. */
@@ -123,7 +129,7 @@ export default function CommandCenter({ firebaseAdminConfigured }: { firebaseAdm
   async function approve(index: number) {
     if (!response) return;
     const p = response.proposals[index];
-    if (!p || isHighStakesStageChange(p)) return;
+    if (!p || isHighStakesStageChange(p) || isWhatsAppProposal(p)) return;
     setApproving(index);
     const headers = { "Content-Type": "application/json" };
     try {
@@ -255,6 +261,10 @@ export default function CommandCenter({ firebaseAdminConfigured }: { firebaseAdm
           <p className="text-2xl font-bold text-navy">{staleEmployees ? staleEmployees.length : "—"}</p>
           <p className="mt-1 text-xs text-muted">AI workforce awaiting report</p>
         </div>
+        <div className="card-surface p-4">
+          <p className="text-2xl font-bold text-navy">{state ? state.whatsappAwaitingResponseCount : "—"}</p>
+          <p className="mt-1 text-xs text-muted">WhatsApp conversations awaiting response</p>
+        </div>
       </div>
 
       {state?.biggestBottleneck && (
@@ -316,6 +326,7 @@ export default function CommandCenter({ firebaseAdminConfigured }: { firebaseAdm
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted">Proposed actions</p>
                     {response.proposals.map((p, i) => {
                       const highStakes = isHighStakesStageChange(p);
+                      const whatsapp = isWhatsAppProposal(p);
                       const approved = approvedIndexes.has(i);
                       return (
                         <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-df-md border border-border bg-canvas p-2.5 text-xs">
@@ -324,6 +335,10 @@ export default function CommandCenter({ firebaseAdminConfigured }: { firebaseAdm
                             <span className="font-medium text-teal">Approved</span>
                           ) : highStakes ? (
                             <span className="text-muted">Stage change past Qualified — review directly on the prospect page.</span>
+                          ) : whatsapp ? (
+                            <Link href={`/admin/prospects/${p.args.prospectId}`} className="text-teal hover:underline">
+                              Review &amp; send from the prospect page →
+                            </Link>
                           ) : (
                             <button
                               type="button"

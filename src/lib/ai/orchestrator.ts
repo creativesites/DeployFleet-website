@@ -3,8 +3,9 @@ import { pickToolAdapter } from "./router";
 import { compileGlobalContext } from "./contextCompiler";
 import { formatSystemState, getSystemState } from "./systemState";
 import { ORCHESTRATOR_SYSTEM_PROMPT } from "./prompts";
-import { createAuditEvent, getProspect, listProspects } from "@/lib/crm";
+import { createAuditEvent, getProspect, listProspects, updateProspect } from "@/lib/crm";
 import { PIPELINE_STAGE_LABEL } from "@/lib/crmTypes";
+import { checkAvailability, isGatewayConfigured } from "@/lib/whatsapp/gatewayClient";
 import type { ToolCallOutcome, ToolDefinition } from "./providers/types";
 
 /**
@@ -92,6 +93,47 @@ async function flagStaleInformation(args: Record<string, unknown>): Promise<Tool
   }
 
   return { summary: flags.length > 0 ? `Flags for ${prospect.name}: ${flags.join(" ")}` : `No issues found for ${prospect.name}.` };
+}
+
+/**
+ * docs/whatsapp-intelligence-architecture.md §12 — three new tools, same
+ * registry shape as every existing one. draft_whatsapp_message/
+ * send_whatsapp_message are "propose" (Level 0, permanently, per §8 —
+ * there is no autonomyLevel value in this registry that would ever let
+ * a WhatsApp send skip Winston's own click in SendWhatsAppPanel, since
+ * "propose" tools never execute from here regardless of the number
+ * attached to them). verify_whatsapp_number is "read": a verification
+ * check only ever mutates Prospect.whatsappStatus/whatsappVerifiedAt —
+ * the same "activity-log-shaped write" category flag_stale_information
+ * already earned real-execution treatment for.
+ */
+async function verifyWhatsAppNumber(args: Record<string, unknown>): Promise<ToolHandlerResult> {
+  const prospectId = str(args, "prospectId");
+  const prospect = prospectId ? await getProspect(prospectId) : null;
+  if (!prospect) return { summary: "No such prospect — nothing to verify." };
+  if (!isGatewayConfigured()) return { summary: "WhatsApp gateway isn't connected yet — nothing to verify against." };
+
+  const phone = prospect.contactWhatsapp ?? prospect.contactPhone;
+  if (!phone) return { summary: `${prospect.name} has no phone number on file.` };
+
+  const result = await checkAvailability(phone);
+  if (!result.ok) return { summary: `Couldn't verify ${prospect.name}'s number (${result.reason}).` };
+
+  const now = new Date().toISOString();
+  await updateProspect(prospectId, {
+    whatsappStatus: result.exists ? "verified" : "unavailable",
+    whatsappVerifiedAt: now,
+    whatsappJid: result.jid ?? null,
+  });
+  await createAuditEvent({
+    eventType: "whatsapp_verified",
+    summary: `${prospect.name}: WhatsApp number ${result.exists ? "verified" : "not found on WhatsApp"}`,
+    relatedProspectId: prospectId,
+    actor: "ai_orchestrator",
+    metadata: { phone, exists: result.exists },
+  });
+
+  return { summary: result.exists ? `${prospect.name}'s number is on WhatsApp — verified just now.` : `${prospect.name}'s number is not on WhatsApp.` };
 }
 
 const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
@@ -230,6 +272,45 @@ const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
       },
     },
     describeProposal: (args) => str(args, "title") || `Ask employee ${str(args, "employeeId")} for a report.`,
+  },
+  draft_whatsapp_message: {
+    autonomyLevel: 0,
+    kind: "propose",
+    definition: {
+      name: "draft_whatsapp_message",
+      description: "Propose a WhatsApp message to send to a prospect — drafts only, never sends. Winston reviews and sends it from the prospect's page.",
+      parameters: {
+        type: "object",
+        properties: { prospectId: { type: "string" }, message: { type: "string", description: "The drafted message text." } },
+        required: ["prospectId", "message"],
+      },
+    },
+    describeProposal: (args) => `Draft WhatsApp message for prospect ${str(args, "prospectId")}: "${str(args, "message")}"`,
+  },
+  send_whatsapp_message: {
+    autonomyLevel: 0,
+    kind: "propose",
+    definition: {
+      name: "send_whatsapp_message",
+      description:
+        "Propose sending a WhatsApp message to a prospect right now. Always requires Winston's explicit approval on the prospect's page (POST /api/admin/crm/whatsapp/send) — this tool never sends anything itself, regardless of autonomy configuration; there is no path from this tool to an actual send.",
+      parameters: {
+        type: "object",
+        properties: { prospectId: { type: "string" }, message: { type: "string" } },
+        required: ["prospectId", "message"],
+      },
+    },
+    describeProposal: (args) => `Send WhatsApp message to prospect ${str(args, "prospectId")} — review and send from their page.`,
+  },
+  verify_whatsapp_number: {
+    autonomyLevel: 1,
+    kind: "read",
+    definition: {
+      name: "verify_whatsapp_number",
+      description: "Checks whether a prospect's phone number is reachable on WhatsApp right now and records the result. On-demand only — never call this in a loop over many prospects.",
+      parameters: { type: "object", properties: { prospectId: { type: "string" } }, required: ["prospectId"] },
+    },
+    handler: verifyWhatsAppNumber,
   },
   flag_stale_information: {
     autonomyLevel: 1,

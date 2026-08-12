@@ -1,0 +1,28 @@
+{
+  "name": "deployfleet-whatsapp-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DeployFleet's own WhatsApp Communication Layer (WA-0) — a small, always-on gateway ported/adapted from Zuri (creativesites/Personal-Assistant), see docs/whatsapp-intelligence-architecture.md. Not part of the Next.js app; deployed as its own long-lived process (Railway, Fly.io, or an equivalent small VPS), never on Vercel — Baileys needs a persistent WebSocket and local disk, both incompatible with serverless functions.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p .",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^6.7.18",
+    "express": "^4.19.2",
+    "pino": "^9.4.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.9",
+    "@types/qrcode": "^1.5.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

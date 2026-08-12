@@ -10,8 +10,10 @@ import type {
   AuditEvent,
   AuditEventActor,
   AuditEventType,
+  BuyingSignalType,
   Campaign,
   CampaignStatus,
+  ConversationState,
   Decision,
   DecisionScope,
   DecisionStatus,
@@ -31,6 +33,7 @@ import type {
   PipelineStage,
   PhoneClassification,
   Prospect,
+  ProspectContact,
   ProspectIntelligence,
   ProspectSource,
   Task,
@@ -39,6 +42,14 @@ import type {
   TaskPriority,
   TaskStatus,
   VisitorSnapshot,
+  WhatsAppConversation,
+  WhatsAppEntity,
+  WhatsAppMessage,
+  WhatsAppMessageAnalysis,
+  WhatsAppMessageSenderType,
+  WhatsAppNumberStatus,
+  WhatsAppSend,
+  WhatsAppSendStatus,
 } from "./crmTypes";
 
 /**
@@ -113,6 +124,10 @@ function prospectFromDoc(doc: DocumentSnapshot): Prospect {
     createdAt: tsToIso(d.createdAt) ?? new Date(0).toISOString(),
     updatedAt: tsToIso(d.updatedAt) ?? tsToIso(d.createdAt) ?? new Date(0).toISOString(),
     archivedAt: tsToIso(d.archivedAt),
+    whatsappStatus: (d.whatsappStatus as WhatsAppNumberStatus) ?? "unknown",
+    whatsappVerifiedAt: (d.whatsappVerifiedAt as string) ?? null,
+    whatsappJid: (d.whatsappJid as string) ?? null,
+    whatsappOptedOut: Boolean(d.whatsappOptedOut),
   };
 }
 
@@ -213,6 +228,10 @@ export async function createProspect(input: CreateProspectInput): Promise<Prospe
     createdAt: now,
     updatedAt: now,
     archivedAt: null,
+    whatsappStatus: "unknown" satisfies WhatsAppNumberStatus,
+    whatsappVerifiedAt: null,
+    whatsappJid: null,
+    whatsappOptedOut: false,
   });
 
   const doc = await ref.get();
@@ -241,6 +260,10 @@ export interface UpdateProspectInput {
   riskFlags?: string[];
   /** true archives (the Friday Pipeline Cleanse), false restores. */
   archived?: boolean;
+  whatsappStatus?: WhatsAppNumberStatus;
+  whatsappVerifiedAt?: string | null;
+  whatsappJid?: string | null;
+  whatsappOptedOut?: boolean;
 }
 
 export async function updateProspect(id: string, patch: UpdateProspectInput): Promise<void> {
@@ -317,6 +340,49 @@ export async function logInteraction(prospectId: string, input: LogInteractionIn
 
 function computePhoneClassification(phone: string | null, whatsapp: string | null): PhoneClassification {
   return classifyZambianPhone(whatsapp || phone);
+}
+
+function lastDigits(raw: string | null | undefined, n = 9): string {
+  return (raw ?? "").replace(/[^0-9]/g, "").slice(-n);
+}
+
+export interface PhoneMatch {
+  prospectId: string;
+  prospectContactId: string | null;
+}
+
+/**
+ * §7 — the WhatsApp webhook's own "identify prospect + conversation"
+ * step. Matches on the last 9 significant digits (drops any country-code/
+ * trunk-prefix formatting difference between how a number was typed into
+ * DeployFleet and how it arrives from WhatsApp) against both
+ * Prospect.contactWhatsapp/contactPhone and every ProspectContact.phone.
+ * Returns null when no match is found — this route deliberately never
+ * creates a new Prospect from an unrecognized inbound number (out of
+ * scope; see docs/whatsapp-intelligence-architecture.md §7).
+ */
+export async function findProspectByPhone(phone: string): Promise<PhoneMatch | null> {
+  const target = lastDigits(phone);
+  if (!target) return null;
+
+  const db = getAdminFirestore();
+  const prospectsSnap = await db.collection(PROSPECTS).limit(1000).get();
+  for (const doc of prospectsSnap.docs) {
+    const d = doc.data();
+    if (lastDigits(d.contactWhatsapp as string) === target || lastDigits(d.contactPhone as string) === target) {
+      return { prospectId: doc.id, prospectContactId: null };
+    }
+  }
+
+  const contactsSnap = await db.collection(PROSPECT_CONTACTS).limit(2000).get();
+  for (const doc of contactsSnap.docs) {
+    const d = doc.data();
+    if (lastDigits(d.phone as string) === target) {
+      return { prospectId: (d.prospectId as string) ?? "", prospectContactId: doc.id };
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -1242,4 +1308,378 @@ export async function countEmailSendsToday(): Promise<number> {
   const sends = await listEmailSends({ limit: 2000 });
   const today = new Date().toISOString().slice(0, 10);
   return sends.filter((s) => s.status === "sent" && s.createdAt.slice(0, 10) === today).length;
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp Intelligence & Outreach Automation
+// docs/whatsapp-intelligence-architecture.md — Phase 4. Same "fetch
+// broadly, filter in memory" composite-index-avoidance discipline as every
+// section above.
+// ---------------------------------------------------------------------------
+
+const PROSPECT_CONTACTS = "prospectContacts";
+const WHATSAPP_CONVERSATIONS = "whatsappConversations";
+const WHATSAPP_MESSAGES = "whatsappMessages";
+const WHATSAPP_MESSAGE_ANALYSES = "whatsappMessageAnalyses";
+const WHATSAPP_SENDS = "whatsappSends";
+
+/** §11 — the same daily-cap shape as DAILY_EMAIL_CAP, its own counter. */
+export const DAILY_WHATSAPP_CAP = 20;
+/** §11 — no more than one outbound message per prospect per 24h. */
+export const WHATSAPP_COOLDOWN_HOURS = 24;
+
+function prospectContactFromDoc(doc: DocumentSnapshot): ProspectContact {
+  const d = doc.data() ?? {};
+  return {
+    id: doc.id,
+    prospectId: (d.prospectId as string) ?? "",
+    name: (d.name as string) ?? null,
+    role: (d.role as string) ?? null,
+    phone: (d.phone as string) ?? "",
+    whatsappStatus: (d.whatsappStatus as WhatsAppNumberStatus) ?? "unknown",
+    whatsappVerifiedAt: (d.whatsappVerifiedAt as string) ?? null,
+    whatsappJid: (d.whatsappJid as string) ?? null,
+    isPrimary: Boolean(d.isPrimary),
+    discoveredVia: (d.discoveredVia as ProspectContact["discoveredVia"]) ?? "manual",
+    createdAt: tsToIso(d.createdAt) ?? new Date(0).toISOString(),
+  };
+}
+
+export interface CreateProspectContactInput {
+  prospectId: string;
+  name?: string | null;
+  role?: string | null;
+  phone: string;
+  isPrimary?: boolean;
+  discoveredVia?: ProspectContact["discoveredVia"];
+}
+
+/** §5.2 — Winston's own example (reception / ops manager / owner, each with their own number). Setting isPrimary unsets it on every other contact for the same prospect first. */
+export async function createProspectContact(input: CreateProspectContactInput): Promise<ProspectContact> {
+  const db = getAdminFirestore();
+  if (input.isPrimary) {
+    const existing = await db.collection(PROSPECT_CONTACTS).where("prospectId", "==", input.prospectId).limit(200).get();
+    for (const doc of existing.docs) {
+      if (doc.data().isPrimary) await doc.ref.update({ isPrimary: false });
+    }
+  }
+  const ref = await db.collection(PROSPECT_CONTACTS).add({
+    prospectId: input.prospectId,
+    name: input.name ?? null,
+    role: input.role ?? null,
+    phone: input.phone,
+    whatsappStatus: "unknown" satisfies WhatsAppNumberStatus,
+    whatsappVerifiedAt: null,
+    whatsappJid: null,
+    isPrimary: input.isPrimary ?? false,
+    discoveredVia: input.discoveredVia ?? "manual",
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  const doc = await ref.get();
+  return prospectContactFromDoc(doc);
+}
+
+export async function listProspectContacts(prospectId: string): Promise<ProspectContact[]> {
+  const db = getAdminFirestore();
+  const snapshot = await db.collection(PROSPECT_CONTACTS).where("prospectId", "==", prospectId).limit(200).get();
+  return snapshot.docs.map(prospectContactFromDoc).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+}
+
+export async function getProspectContact(id: string): Promise<ProspectContact | null> {
+  const doc = await getAdminFirestore().collection(PROSPECT_CONTACTS).doc(id).get();
+  return doc.exists ? prospectContactFromDoc(doc) : null;
+}
+
+export interface UpdateProspectContactInput {
+  name?: string | null;
+  role?: string | null;
+  whatsappStatus?: WhatsAppNumberStatus;
+  whatsappVerifiedAt?: string | null;
+  whatsappJid?: string | null;
+}
+
+export async function updateProspectContact(id: string, patch: UpdateProspectContactInput): Promise<void> {
+  await getAdminFirestore().collection(PROSPECT_CONTACTS).doc(id).update({ ...patch });
+}
+
+function conversationFromDoc(doc: DocumentSnapshot): WhatsAppConversation {
+  const d = doc.data() ?? {};
+  return {
+    id: doc.id,
+    prospectId: (d.prospectId as string) ?? "",
+    prospectContactId: (d.prospectContactId as string) ?? null,
+    whatsappJid: (d.whatsappJid as string) ?? "",
+    state: (d.state as ConversationState) ?? "new",
+    lastMessageAt: (d.lastMessageAt as string) ?? null,
+    lastMessagePreview: (d.lastMessagePreview as string) ?? null,
+    unreadCount: (d.unreadCount as number) ?? 0,
+    requiresResponse: Boolean(d.requiresResponse),
+    responseUrgency: (d.responseUrgency as WhatsAppConversation["responseUrgency"]) ?? null,
+    createdAt: tsToIso(d.createdAt) ?? new Date(0).toISOString(),
+    updatedAt: tsToIso(d.updatedAt) ?? tsToIso(d.createdAt) ?? new Date(0).toISOString(),
+  };
+}
+
+export async function listWhatsAppConversations(filters: { requiresResponse?: boolean } = {}): Promise<WhatsAppConversation[]> {
+  const db = getAdminFirestore();
+  const snapshot = await db.collection(WHATSAPP_CONVERSATIONS).orderBy("updatedAt", "desc").limit(1000).get();
+  let conversations = snapshot.docs.map(conversationFromDoc);
+  if (filters.requiresResponse !== undefined) conversations = conversations.filter((c) => c.requiresResponse === filters.requiresResponse);
+  return conversations;
+}
+
+export async function getWhatsAppConversation(id: string): Promise<WhatsAppConversation | null> {
+  const doc = await getAdminFirestore().collection(WHATSAPP_CONVERSATIONS).doc(id).get();
+  return doc.exists ? conversationFromDoc(doc) : null;
+}
+
+export async function listConversationsForProspect(prospectId: string): Promise<WhatsAppConversation[]> {
+  const db = getAdminFirestore();
+  const snapshot = await db.collection(WHATSAPP_CONVERSATIONS).where("prospectId", "==", prospectId).limit(50).get();
+  return snapshot.docs.map(conversationFromDoc).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+}
+
+/** §7 — one conversation per (prospectId, whatsappJid); found or created on the very first inbound/outbound message. */
+export async function getOrCreateConversation(prospectId: string, whatsappJid: string, prospectContactId: string | null = null): Promise<WhatsAppConversation> {
+  const db = getAdminFirestore();
+  const existing = await db
+    .collection(WHATSAPP_CONVERSATIONS)
+    .where("prospectId", "==", prospectId)
+    .limit(50)
+    .get();
+  const match = existing.docs.find((doc) => doc.data().whatsappJid === whatsappJid);
+  if (match) return conversationFromDoc(match);
+
+  const now = FieldValue.serverTimestamp();
+  const ref = await db.collection(WHATSAPP_CONVERSATIONS).add({
+    prospectId,
+    prospectContactId,
+    whatsappJid,
+    state: "new" satisfies ConversationState,
+    lastMessageAt: null,
+    lastMessagePreview: null,
+    unreadCount: 0,
+    requiresResponse: false,
+    responseUrgency: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const doc = await ref.get();
+  return conversationFromDoc(doc);
+}
+
+export interface UpdateConversationInput {
+  state?: ConversationState;
+  lastMessageAt?: string;
+  lastMessagePreview?: string;
+  unreadCount?: number;
+  requiresResponse?: boolean;
+  responseUrgency?: WhatsAppConversation["responseUrgency"];
+}
+
+/** §9 — every state transition also gets a "whatsapp_conversation_state_changed" AuditEvent; callers pass evidence for that log entry. */
+export async function updateWhatsAppConversation(id: string, patch: UpdateConversationInput, stateChangeEvidence?: string): Promise<void> {
+  const db = getAdminFirestore();
+  const ref = db.collection(WHATSAPP_CONVERSATIONS).doc(id);
+  const before = await ref.get();
+  const fromState = (before.data()?.state as ConversationState) ?? "new";
+
+  await ref.update({ ...patch, updatedAt: FieldValue.serverTimestamp() });
+
+  if (patch.state && patch.state !== fromState) {
+    const prospectId = (before.data()?.prospectId as string) ?? null;
+    await createAuditEvent({
+      eventType: "whatsapp_conversation_state_changed",
+      summary: `WhatsApp conversation moved ${fromState} → ${patch.state}`,
+      relatedProspectId: prospectId,
+      actor: "ai_inbox_extraction",
+      metadata: { conversationId: id, from: fromState, to: patch.state, evidence: stateChangeEvidence ?? null },
+    });
+    if (prospectId) await invalidateProspectContext(prospectId);
+  }
+}
+
+function messageFromDoc(doc: DocumentSnapshot): WhatsAppMessage {
+  const d = doc.data() ?? {};
+  return {
+    id: doc.id,
+    conversationId: (d.conversationId as string) ?? "",
+    waMessageId: (d.waMessageId as string) ?? "",
+    senderType: (d.senderType as WhatsAppMessageSenderType) ?? "prospect",
+    body: (d.body as string) ?? null,
+    mediaUrl: (d.mediaUrl as string) ?? null,
+    mediaMimeType: (d.mediaMimeType as string) ?? null,
+    whatsappTimestamp: (d.whatsappTimestamp as string) ?? new Date(0).toISOString(),
+    createdAt: tsToIso(d.createdAt) ?? new Date(0).toISOString(),
+  };
+}
+
+export interface CreateWhatsAppMessageInput {
+  conversationId: string;
+  waMessageId: string;
+  senderType: WhatsAppMessageSenderType;
+  body: string | null;
+  mediaUrl?: string | null;
+  mediaMimeType?: string | null;
+  whatsappTimestamp: string;
+}
+
+/** §5.3/Zuri's own dedupe key — (conversationId, waMessageId). A duplicate delivery of the same webhook event is a silent no-op, not a second row. */
+export async function createWhatsAppMessage(input: CreateWhatsAppMessageInput): Promise<WhatsAppMessage> {
+  const db = getAdminFirestore();
+  const existing = await db
+    .collection(WHATSAPP_MESSAGES)
+    .where("conversationId", "==", input.conversationId)
+    .limit(500)
+    .get();
+  const duplicate = existing.docs.find((doc) => doc.data().waMessageId === input.waMessageId);
+  if (duplicate) return messageFromDoc(duplicate);
+
+  const ref = await db.collection(WHATSAPP_MESSAGES).add({
+    conversationId: input.conversationId,
+    waMessageId: input.waMessageId,
+    senderType: input.senderType,
+    body: input.body,
+    mediaUrl: input.mediaUrl ?? null,
+    mediaMimeType: input.mediaMimeType ?? null,
+    whatsappTimestamp: input.whatsappTimestamp,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  const doc = await ref.get();
+  return messageFromDoc(doc);
+}
+
+export async function listWhatsAppMessages(conversationId: string, limitCount = 200): Promise<WhatsAppMessage[]> {
+  const db = getAdminFirestore();
+  const snapshot = await db.collection(WHATSAPP_MESSAGES).where("conversationId", "==", conversationId).limit(limitCount).get();
+  return snapshot.docs.map(messageFromDoc).sort((a, b) => (a.whatsappTimestamp < b.whatsappTimestamp ? -1 : 1));
+}
+
+function analysisFromDoc(doc: DocumentSnapshot): WhatsAppMessageAnalysis {
+  const d = doc.data() ?? {};
+  return {
+    id: doc.id,
+    messageId: (d.messageId as string) ?? "",
+    sentiment: (d.sentiment as WhatsAppMessageAnalysis["sentiment"]) ?? "neutral",
+    intentCategory: (d.intentCategory as string) ?? "unknown",
+    intentConfidence: (d.intentConfidence as number) ?? 0,
+    entities: Array.isArray(d.entities) ? (d.entities as WhatsAppEntity[]) : [],
+    buyingSignals: Array.isArray(d.buyingSignals) ? (d.buyingSignals as BuyingSignalType[]) : [],
+    requiresResponse: Boolean(d.requiresResponse),
+    responseUrgency: (d.responseUrgency as WhatsAppMessageAnalysis["responseUrgency"]) ?? "low",
+    summary: (d.summary as string) ?? "",
+    suggestedConversationState: (d.suggestedConversationState as ConversationState) ?? null,
+    analyzedAt: (d.analyzedAt as string) ?? new Date().toISOString(),
+  };
+}
+
+export interface CreateWhatsAppMessageAnalysisInput {
+  messageId: string;
+  sentiment: WhatsAppMessageAnalysis["sentiment"];
+  intentCategory: string;
+  intentConfidence: number;
+  entities: WhatsAppEntity[];
+  buyingSignals: BuyingSignalType[];
+  requiresResponse: boolean;
+  responseUrgency: WhatsAppMessageAnalysis["responseUrgency"];
+  summary: string;
+  suggestedConversationState: ConversationState | null;
+}
+
+/** §7/§10 — written directly, no human-approval gate: this is metadata/scoring (sentiment, urgency, buying signals → opportunityScore), not a facts/tasks/decisions write, which stays gated via the Inbox's review-then-apply path. */
+export async function createWhatsAppMessageAnalysis(input: CreateWhatsAppMessageAnalysisInput): Promise<WhatsAppMessageAnalysis> {
+  const db = getAdminFirestore();
+  const ref = await db.collection(WHATSAPP_MESSAGE_ANALYSES).add({
+    messageId: input.messageId,
+    sentiment: input.sentiment,
+    intentCategory: input.intentCategory,
+    intentConfidence: input.intentConfidence,
+    entities: input.entities,
+    buyingSignals: input.buyingSignals,
+    requiresResponse: input.requiresResponse,
+    responseUrgency: input.responseUrgency,
+    summary: input.summary,
+    suggestedConversationState: input.suggestedConversationState,
+    analyzedAt: new Date().toISOString(),
+  });
+  const doc = await ref.get();
+  return analysisFromDoc(doc);
+}
+
+function whatsAppSendFromDoc(doc: DocumentSnapshot): WhatsAppSend {
+  const d = doc.data() ?? {};
+  return {
+    id: doc.id,
+    prospectId: (d.prospectId as string) ?? "",
+    conversationId: (d.conversationId as string) ?? null,
+    recipientJid: (d.recipientJid as string) ?? "",
+    messageBody: (d.messageBody as string) ?? "",
+    isFirstOutreach: Boolean(d.isFirstOutreach),
+    approvedBy: "winston",
+    status: (d.status as WhatsAppSendStatus) ?? "failed",
+    errorMessage: (d.errorMessage as string) ?? null,
+    sentAt: tsToIso(d.sentAt) ?? new Date(0).toISOString(),
+    createdAt: tsToIso(d.createdAt) ?? new Date(0).toISOString(),
+  };
+}
+
+export interface CreateWhatsAppSendInput {
+  prospectId: string;
+  conversationId: string | null;
+  recipientJid: string;
+  messageBody: string;
+  isFirstOutreach: boolean;
+  status: WhatsAppSendStatus;
+  errorMessage?: string | null;
+}
+
+export async function createWhatsAppSend(input: CreateWhatsAppSendInput): Promise<WhatsAppSend> {
+  const db = getAdminFirestore();
+  const now = FieldValue.serverTimestamp();
+  const ref = await db.collection(WHATSAPP_SENDS).add({
+    prospectId: input.prospectId,
+    conversationId: input.conversationId,
+    recipientJid: input.recipientJid,
+    messageBody: input.messageBody,
+    isFirstOutreach: input.isFirstOutreach,
+    approvedBy: "winston",
+    status: input.status,
+    errorMessage: input.errorMessage ?? null,
+    sentAt: now,
+    createdAt: now,
+  });
+  const doc = await ref.get();
+  return whatsAppSendFromDoc(doc);
+}
+
+export interface ListWhatsAppSendsFilters {
+  prospectId?: string;
+  limit?: number;
+}
+
+export async function listWhatsAppSends(filters: ListWhatsAppSendsFilters = {}): Promise<WhatsAppSend[]> {
+  const db = getAdminFirestore();
+  const snapshot = await db
+    .collection(WHATSAPP_SENDS)
+    .orderBy("createdAt", "desc")
+    .limit(filters.limit ?? 2000)
+    .get();
+  let sends = snapshot.docs.map(whatsAppSendFromDoc);
+  if (filters.prospectId) sends = sends.filter((s) => s.prospectId === filters.prospectId);
+  return sends;
+}
+
+/** §11's daily cap — same "only successful sends count" reasoning as countEmailSendsToday(). */
+export async function countWhatsAppSendsToday(): Promise<number> {
+  const sends = await listWhatsAppSends({ limit: 2000 });
+  const today = new Date().toISOString().slice(0, 10);
+  return sends.filter((s) => s.status === "sent" && s.createdAt.slice(0, 10) === today).length;
+}
+
+/** §11's per-prospect cooldown — null if this would be the first-ever send to this prospect (also the isFirstOutreach signal §8's permanent Level-0 floor keys off). */
+export async function getLastWhatsAppSendForProspect(prospectId: string): Promise<WhatsAppSend | null> {
+  const sends = await listWhatsAppSends({ prospectId, limit: 500 });
+  const sent = sends.filter((s) => s.status === "sent");
+  if (sent.length === 0) return null;
+  return sent.reduce((latest, s) => (s.createdAt > latest.createdAt ? s : latest));
 }

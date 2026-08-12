@@ -15,6 +15,8 @@ import {
 } from "@/lib/crmTypes";
 import InboxPasteBox from "./InboxPasteBox";
 import SendEmailPanel from "./SendEmailPanel";
+import SendWhatsAppPanel from "./SendWhatsAppPanel";
+import ProspectContacts from "./ProspectContacts";
 
 type TabKey = "overview" | "intelligence" | "employees" | "interactions" | "timeline";
 
@@ -298,6 +300,8 @@ export default function ProspectDetail({ id }: { id: string }) {
           </div>
 
           <SendEmailPanel prospect={prospect} onSent={loadProspect} />
+          <SendWhatsAppPanel prospect={prospect} onChanged={loadProspect} />
+          <ProspectContacts prospectId={prospect.id} />
           </div>
         )}
 

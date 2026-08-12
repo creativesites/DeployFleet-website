@@ -1207,31 +1207,71 @@ send-reporting UI yet, though `EmailSend` rows do carry `campaignId`;
 and no unsubscribe/opt-out mechanism, appropriate at this tool's actual
 scale (20/day, personal outreach) but worth adding before that changes.
 
-### WhatsApp Intelligence & Outreach Automation — planned, Phase 4 (not built)
+### WhatsApp Intelligence & Outreach Automation — Phase 4, all five sub-phases (WA-0–WA-4) built
 
 [`docs/whatsapp-intelligence-architecture.md`](docs/whatsapp-intelligence-architecture.md)
-is a full architecture document for controlled WhatsApp automation —
-number verification, WhatsApp messages becoming a real CRM activity
-source (facts/tasks/decisions, reusing the AI Inbox's own review-then-
-apply pattern), buying-signal detection feeding the existing
-`opportunityScore`, and a response-mode ladder mapped onto the
-Orchestrator's already-shipped autonomy levels (every send stays
-Level 0 — Winston approves every message — for the entire scope of that
-document). Grounded in an actual read of Winston's own Zuri product
-(`creativesites/Personal-Assistant`)'s production WhatsApp/conversation-
-intelligence stack (Baileys transport, session management, message
-pipeline, AI analysis) — what's directly portable, what needs adapting,
-and what's genuinely new engineering (a live WhatsApp-availability check
-exists as a Baileys library primitive but isn't wired up in either
-product yet) are each traced to real source files, not assumed. Also
-resolves the hosting question the base doc's own AI work never had to
-face: Baileys needs a persistent connection Vercel serverless can't
-hold, so this is planned as a small, separate, always-on service —
-never sharing infrastructure with the unrelated DeployFleet Odoo demo
-server. **Not yet implemented** — planning only, per Winston's own
-explicit "start with a document" instruction, the same discipline
-`docs/ai-marketing-os-architecture.md` was written under before any of
-its Phase 0–3 code existed.
+is the full architecture document, grounded in an actual read of
+Winston's own Zuri product (`creativesites/Personal-Assistant`)'s
+production WhatsApp/conversation-intelligence stack (Baileys transport,
+session management, message pipeline, AI analysis) — what's directly
+portable, what needs adapting, and what's genuinely new engineering are
+each traced to real source files read during that session, not assumed.
+Per Winston's explicit "implement all phases in a single session...for
+any open questions, implement your recommendations," every one of the
+doc's §15 open questions now carries a concrete resolution and every
+phase is built:
+
+- **WA-0 (gateway skeleton)**: `whatsapp-service/` — a new, separate,
+  host-agnostic Node service (ported/simplified from Zuri's
+  `WhatsAppTransport`/`BaileysTransport`/`SessionManager`, single-session
+  rather than Zuri's multi-tenant one), exposing `/status`, `/connect`,
+  `/messages/send`, `/whatsapp/check`, and forwarding inbound messages to
+  DeployFleet's own webhook. Verified via `npm run typecheck`/
+  `npm run build` against real `@whiskeysockets/baileys` types.
+- **WA-1 (number intelligence)**: `Prospect.whatsappStatus`/
+  `whatsappVerifiedAt`/`whatsappJid`, a new `ProspectContact` collection
+  for multi-number prospects (`POST /api/admin/crm/whatsapp/verify`,
+  `ProspectContacts.tsx`), on-demand-only verification per §15's
+  resolved rate-limit-safety call.
+- **WA-2 (inbound as CRM activity)**: `POST /api/whatsapp/webhook`
+  (bearer-secret authenticated, not a Clerk session — the gateway calls
+  it, not a browser) identifies the prospect, stores the message, runs
+  `WHATSAPP_ANALYSIS_SYSTEM_PROMPT` for sentiment/urgency/buying signals
+  (written directly, no approval gate — the same "score from an always-
+  on field" lesson Zuri's own lead-scoring history taught), and
+  separately reuses the AI Inbox's exact review-then-apply mechanism
+  (factored out as `src/lib/ai/inboxExtraction.ts`, shared with
+  `POST /api/admin/crm/inbox`) for any facts/tasks/decisions — never a
+  second write path.
+- **WA-3 (controlled outbound)**: `WhatsAppSend` (capped at 20/day,
+  24h per-prospect cooldown, permanent opt-out enforcement — same shape
+  as `EmailSend`), `POST /api/admin/crm/whatsapp/send` (Level 0,
+  permanently — the only route that ever calls the gateway's send
+  endpoint), `POST /api/admin/crm/whatsapp/draft` (AI-drafts, never
+  sends), and `SendWhatsAppPanel.tsx` on the Prospect page.
+- **WA-4 (AI Marketing OS integration)**: three new Orchestrator tools
+  (`draft_whatsapp_message`, `send_whatsapp_message` — both "propose"
+  only, Command Center never one-click-approves a WhatsApp send, it
+  links to the prospect page instead; `verify_whatsapp_number` — a real
+  "read" tool), a Command Center tile ("WhatsApp conversations awaiting
+  response"), a System State bottleneck check (Winston's own §12
+  morning-brief example: a verified-WhatsApp, high-opportunity prospect
+  with zero outreach), and Daily Rhythm's brief now includes the
+  WhatsApp-awaiting-response count.
+
+**Two things remain genuinely impossible to complete from inside this
+repo/dev environment**, disclosed exactly where they'd otherwise be
+assumed done: establishing a live Baileys↔WhatsApp connection (needs a
+real phone to scan a QR code or enter a pairing code) and actually
+deploying `whatsapp-service` to live hosting (needs hosting-provider
+credentials). Every DeployFleet-side feature is written to degrade
+gracefully — "gateway not configured" — exactly like `isEmailJsConfigured()`
+already does for EmailJS, until Winston completes both manual steps
+(`whatsapp-service/README.md` has the full checklist). **Not yet
+verified against a live WhatsApp account or a live gateway deployment**
+— same "implemented to the documented API shape, not live-verified"
+caveat this project has carried consistently through its DeepSeek/
+Gemini/EmailJS integrations.
 
 ### Admin dashboard (`/admin`)
 
