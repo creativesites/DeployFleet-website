@@ -1,6 +1,14 @@
 import "server-only";
 import { getStore } from "./adminStore";
-import { DEFAULT_DAILY_GOALS, type DailyGoalSet, type GoalsConfig, type Weekday } from "./crmTypes";
+import {
+  DEFAULT_DAILY_GOALS,
+  DEFAULT_RANKING_WEIGHTS,
+  RANKING_COMPONENT_META,
+  type DailyGoalSet,
+  type GoalsConfig,
+  type RankingWeights,
+  type Weekday,
+} from "./crmTypes";
 
 /**
  * Revenue OS RS-0 §4.3 — the configurable daily/weekly goals, stored via
@@ -56,3 +64,30 @@ export function resolveGoalsForDate(config: GoalsConfig, isoDate: string): Daily
 }
 
 export const GOALS_STORE_KEY = GOALS_CONFIG_KEY;
+
+// ---------------------------------------------------------------------------
+// Revenue OS RS-1 §5.7 — the editable prospect-ranking weights, stored via
+// the same KeyValueStore under a sibling key (the doc's "extend GoalsConfig
+// or a sibling RankingWeights key" — sibling chosen so goals and ranking
+// stay independently editable and independently defaulting).
+// ---------------------------------------------------------------------------
+
+const RANKING_WEIGHTS_KEY = "RANKING_WEIGHTS";
+
+export async function getRankingWeights(): Promise<RankingWeights> {
+  const stored = await getStore().get<RankingWeights>(RANKING_WEIGHTS_KEY);
+  if (!stored) return { ...DEFAULT_RANKING_WEIGHTS };
+  // Backfill any component added after a config was first saved.
+  const out = { ...DEFAULT_RANKING_WEIGHTS };
+  for (const { key } of RANKING_COMPONENT_META) {
+    if (typeof stored[key] === "number" && Number.isFinite(stored[key])) out[key] = stored[key];
+  }
+  return out;
+}
+
+export async function saveRankingWeights(weights: RankingWeights): Promise<RankingWeights> {
+  await getStore().set(RANKING_WEIGHTS_KEY, weights);
+  return weights;
+}
+
+export const RANKING_WEIGHTS_STORE_KEY = RANKING_WEIGHTS_KEY;

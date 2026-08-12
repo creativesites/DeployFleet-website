@@ -717,3 +717,69 @@ export const DAILY_GOAL_FIELDS: { key: keyof DailyGoalSet; label: string; tracke
   { key: "followUps", label: "Follow-ups", tracked: false },
   { key: "researchActions", label: "Research actions", tracked: false },
 ];
+
+// ---------------------------------------------------------------------------
+// Revenue OS RS-1 — Daily Prospect Ranking (docs/revenue-os-architecture.md
+// §5.7, §4.4). A deterministic weighted score over existing fields, computed
+// fresh on every Today load — NOT a stored entity. Weights are editable
+// config (getStore, same as goals). AI, when configured, only re-ranks the
+// top deterministic candidates; it never computes the base score (§6).
+// ---------------------------------------------------------------------------
+
+export type RankComponent =
+  | "icpFit"
+  | "engagement"
+  | "followUpUrgency"
+  | "buyingIntent"
+  | "strategicRelevance"
+  | "contactability"
+  | "recency";
+
+/** Weights as whole-number percentages (editor-friendly); normalized to sum 1 at scoring time, so they need not total exactly 100. */
+export type RankingWeights = Record<RankComponent, number>;
+
+export const RANKING_COMPONENT_META: { key: RankComponent; label: string; description: string }[] = [
+  { key: "icpFit", label: "ICP fit", description: "How good a fit this company is (icpFitScore)." },
+  { key: "engagement", label: "Website engagement", description: "Activity on the marketing site (linked visitor engagement)." },
+  { key: "followUpUrgency", label: "Follow-up urgency", description: "How overdue the next action is, plus any WhatsApp awaiting a reply." },
+  { key: "buyingIntent", label: "Buying intent", description: "Opportunity score, fed by WhatsApp buying signals." },
+  { key: "strategicRelevance", label: "Strategic relevance", description: "Matches an active directive or campaign's stated focus." },
+  { key: "contactability", label: "Contactability", description: "Whether there's a phone, verified WhatsApp, and/or email on file." },
+  { key: "recency", label: "Recency", description: "Momentum — how recently this prospect was last contacted." },
+];
+
+/** §5.7's suggested starting weights (percentages summing to 100). Tunable on /admin/settings/ranking; expect to re-tune after real use. */
+export const DEFAULT_RANKING_WEIGHTS: RankingWeights = {
+  icpFit: 25,
+  engagement: 20,
+  followUpUrgency: 15,
+  buyingIntent: 15,
+  strategicRelevance: 10,
+  contactability: 10,
+  recency: 5,
+};
+
+export interface RankComponentScore {
+  component: RankComponent;
+  label: string;
+  /** The raw 0–1 signal for this component before weighting. */
+  signal: number;
+  /** The normalized weight (0–1) actually applied. */
+  weight: number;
+  /** signal × weight × 100 — this component's share of the final score. */
+  contribution: number;
+}
+
+export interface ProspectRank {
+  /** 0–100 weighted score. */
+  score: number;
+  breakdown: RankComponentScore[];
+  /** Short human phrases for the top contributing components — the card's "why now" line. */
+  reasons: string[];
+  /** True when an AI re-rank pass moved this prospect from its deterministic position. */
+  aiAdjusted: boolean;
+}
+
+export interface RankedProspect extends Prospect {
+  rank: ProspectRank;
+}

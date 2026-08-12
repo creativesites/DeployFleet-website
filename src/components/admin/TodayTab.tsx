@@ -10,6 +10,7 @@ import {
   type InteractionType,
   type PipelineStage,
   type Prospect,
+  type RankedProspect,
 } from "@/lib/crmTypes";
 
 const OUTCOME_ORDER: InteractionOutcome[] = [
@@ -43,7 +44,91 @@ interface Extraction {
   nextActionType: InteractionType | null;
 }
 
-function ProspectCard({ prospect, onLogged }: { prospect: Prospect; onLogged: (id: string) => void }) {
+/** ICP tier label from the deterministic icpFitScore, paired with the raw fleet-size text when present (§5.9). */
+function icpTier(prospect: Prospect): { label: string; tone: "strong" | "good" | "marginal" | "unrated" } {
+  const score = prospect.icpFitScore;
+  const size = prospect.estimatedFleetSizeRaw ? ` · ${prospect.estimatedFleetSizeRaw}` : "";
+  if (score === null) return { label: `ICP unrated${size}`, tone: "unrated" };
+  if (score >= 75) return { label: `ICP A — strong${size}`, tone: "strong" };
+  if (score >= 50) return { label: `ICP B — good${size}`, tone: "good" };
+  if (score >= 25) return { label: `ICP C — marginal${size}`, tone: "marginal" };
+  return { label: `ICP D — weak${size}`, tone: "marginal" };
+}
+
+const ICP_TONE_CLASS: Record<"strong" | "good" | "marginal" | "unrated", string> = {
+  strong: "border-emerald/40 bg-emerald/10 text-emerald",
+  good: "border-teal/40 bg-teal/10 text-teal",
+  marginal: "border-border bg-canvas text-body",
+  unrated: "border-border bg-canvas text-muted",
+};
+
+function RankHeader({ prospect, position }: { prospect: RankedProspect; position: number }) {
+  const [open, setOpen] = useState(false);
+  const { rank } = prospect;
+  const tier = icpTier(prospect);
+  const shown = rank.breakdown.filter((b) => b.contribution > 0).sort((a, b) => b.contribution - a.contribution);
+
+  return (
+    <div className="mb-3 rounded-df-md border border-border bg-canvas p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-navy px-2 text-xs font-bold text-white">
+          #{position}
+        </span>
+        <span className="text-sm font-semibold text-navy">Rank score {rank.score}</span>
+        {rank.aiAdjusted && (
+          <span className="rounded-full border border-ai-violet/40 bg-ai-violet/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ai-violet">
+            AI-adjusted
+          </span>
+        )}
+        <button type="button" onClick={() => setOpen((v) => !v)} className="ml-auto text-[11px] text-teal hover:underline">
+          {open ? "Hide breakdown" : "Why this rank"}
+        </button>
+      </div>
+
+      {/* Enrichment chips + reasons */}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${ICP_TONE_CLASS[tier.tone]}`}>{tier.label}</span>
+        {prospect.opportunityScore !== null && (
+          <span className="rounded-full border border-amber/40 bg-amber/10 px-2 py-0.5 text-[11px] font-medium text-amber">
+            Opportunity {prospect.opportunityScore}
+          </span>
+        )}
+        {prospect.visitorSnapshot && (
+          <span className="rounded-full border border-teal/40 bg-teal/10 px-2 py-0.5 text-[11px] font-medium text-teal">
+            Intent {prospect.visitorSnapshot.intentScore}
+          </span>
+        )}
+        {rank.reasons.map((r) => (
+          <span key={r} className="rounded-full border border-border bg-card px-2 py-0.5 text-[11px] text-body">
+            {r}
+          </span>
+        ))}
+      </div>
+
+      {open && (
+        <div className="mt-3 space-y-1.5 border-t border-border pt-3">
+          {shown.map((b) => (
+            <div key={b.component} className="flex items-center gap-2">
+              <span className="w-32 shrink-0 text-[11px] text-muted">{b.label}</span>
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-border">
+                <div
+                  className="h-full rounded-full"
+                  style={{ width: `${Math.min(100, (b.contribution / (rank.score || 1)) * 100)}%`, background: "var(--df-gradient-brand)" }}
+                />
+              </div>
+              <span className="w-10 shrink-0 text-right text-[11px] font-medium text-navy tabular-nums">
+                +{b.contribution.toFixed(1)}
+              </span>
+            </div>
+          ))}
+          {shown.length === 0 && <p className="text-[11px] text-muted">No positive signals yet — this prospect surfaced on its due date alone.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProspectCard({ prospect, position, onLogged }: { prospect: RankedProspect; position: number; onLogged: (id: string) => void }) {
   const [briefState, setBriefState] = useState<"idle" | "loading" | "unavailable">("idle");
   const [intelligence, setIntelligence] = useState(prospect.intelligence);
 
@@ -141,6 +226,7 @@ function ProspectCard({ prospect, onLogged }: { prospect: Prospect; onLogged: (i
 
   return (
     <div className="card-surface p-4 sm:p-5">
+      <RankHeader prospect={prospect} position={position} />
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="font-semibold text-navy">{prospect.name}</p>
@@ -310,22 +396,22 @@ function ProspectCard({ prospect, onLogged }: { prospect: Prospect; onLogged: (i
 }
 
 export default function TodayTab({ firebaseAdminConfigured }: { firebaseAdminConfigured: boolean }) {
-  const [prospects, setProspects] = useState<Prospect[] | null>(null);
+  const [prospects, setProspects] = useState<RankedProspect[] | null>(null);
+  const [aiReranked, setAiReranked] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!firebaseAdminConfigured) return;
     let cancelled = false;
-    fetch(`/api/admin/crm/prospects?dueBy=${todayIso()}`)
+    // Revenue OS RS-1 — the Daily Prospect Engine ranks the queue server-side
+    // (deterministic weighted score, with an optional AI re-rank on top).
+    fetch(`/api/admin/crm/today`)
       .then((res) => res.json())
       .then((data) => {
         if (cancelled) return;
         if (data.ok) {
-          setProspects(
-            [...data.prospects].sort((a: Prospect, b: Prospect) =>
-              (a.nextActionDate ?? "") < (b.nextActionDate ?? "") ? -1 : 1
-            )
-          );
+          setProspects(data.prospects as RankedProspect[]);
+          setAiReranked(Boolean(data.aiReranked));
         } else {
           setError(data.reason ?? "unknown_error");
         }
@@ -366,11 +452,22 @@ export default function TodayTab({ firebaseAdminConfigured }: { firebaseAdminCon
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted">
-        {prospects.length} prospect{prospects.length === 1 ? "" : "s"} due today or overdue, oldest first.
-      </p>
-      {prospects.map((p) => (
-        <ProspectCard key={p.id} prospect={p} onLogged={handleLogged} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted">
+          {prospects.length} prospect{prospects.length === 1 ? "" : "s"} due today or overdue, ranked by the Daily
+          Prospect Engine.{" "}
+          <Link href="/admin/settings/ranking" className="text-teal hover:underline">
+            Tune weights
+          </Link>
+        </p>
+        {aiReranked && (
+          <span className="rounded-full border border-ai-violet/40 bg-ai-violet/10 px-2 py-0.5 text-[11px] font-medium text-ai-violet">
+            AI re-ranked the top of the queue
+          </span>
+        )}
+      </div>
+      {prospects.map((p, i) => (
+        <ProspectCard key={p.id} prospect={p} position={i + 1} onLogged={handleLogged} />
       ))}
     </div>
   );

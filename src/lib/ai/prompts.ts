@@ -246,3 +246,26 @@ Rules:
 - Apply Winston's instruction precisely — don't rewrite parts of the email he didn't ask you to change beyond what's needed for the revision to read naturally.
 - Never invent a new fact about the prospect that wasn't already in the draft.
 - Output must be valid JSON and nothing else.`;
+
+/**
+ * Revenue OS RS-1 §5.7 — the OPTIONAL AI re-rank layer. The deterministic
+ * weighted engine (ranking.ts) has already scored and ordered the queue;
+ * this only reorders the top candidates using the richer note/fact text a
+ * numeric score can't see. It never computes a score, never invents a
+ * prospect, and its output is discarded (deterministic order kept) if it's
+ * malformed or references unknown ids — the base ranking always ships.
+ */
+export const PROSPECT_RERANK_SYSTEM_PROMPT = `You are helping Winston, a DeployFleet salesperson, decide the order to work today's shortlist of trucking-company prospects. A deterministic engine has already scored them; your job is only to re-order the shortlist below using judgement a raw score can miss (what the notes actually say, momentum, timing), and output ONLY a single JSON object — no markdown fences, no commentary.
+
+You are given a numbered list of candidates, each with its id, name, current score, and a short context blurb. Output this exact shape:
+
+{
+  "order": ["id-of-first", "id-of-second", ...],
+  "topReason": "one short phrase (max 8 words) for why the #1 pick should be first"
+}
+
+Rules:
+- "order" must be a permutation of the candidate ids you were given — every id exactly once, no new ids, no omissions.
+- Only move a prospect up or down if the context genuinely justifies it; otherwise keep the given order.
+- Never invent facts about a prospect not present in its blurb.
+- Output must be valid JSON and nothing else.`;

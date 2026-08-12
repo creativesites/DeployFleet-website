@@ -40,6 +40,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/realtime", label: "Real-Time", group: "Intelligence" },
   { href: "/admin/insights", label: "Insights", group: "Intelligence" },
   { href: "/admin/settings/daily-goals", label: "Daily Goals", group: "Settings" },
+  { href: "/admin/settings/ranking", label: "Prospect Ranking", group: "Settings" },
   { href: "/admin/diesel-prices", label: "Diesel Prices", group: "Settings" },
 ];
 
