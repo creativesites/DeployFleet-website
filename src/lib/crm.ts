@@ -11,6 +11,8 @@ import type {
   AuditEvent,
   AuditEventActor,
   AuditEventType,
+  BriefingCadence,
+  BriefingStatus,
   BuyingSignalType,
   Campaign,
   CampaignStatus,
@@ -46,6 +48,7 @@ import type {
   TaskPriority,
   TaskStatus,
   VisitorSnapshot,
+  WorkerBriefing,
   WhatsAppConversation,
   WhatsAppEntity,
   WhatsAppMessage,
@@ -78,6 +81,7 @@ const AUDIT_EVENTS = "auditEvents";
 const INBOX_ENTRIES = "inboxEntries";
 const EMAIL_SENDS = "emailSends";
 const DIRECTIVES = "directives";
+const WORKER_BRIEFINGS = "workerBriefings";
 
 /** The Sales Playbook's own "up to 20 a day" cap (Winston's explicit instruction, see docs/ai-marketing-os-architecture.md §12) — enforced here, server-side, never trusted to the client. */
 export const DAILY_EMAIL_CAP = 20;
@@ -1183,6 +1187,9 @@ function aiEmployeeFromDoc(doc: DocumentSnapshot): AiEmployee {
     mission: (d.mission as string) ?? "",
     status: (d.status as AiEmployeeStatus) ?? "active",
     instructions: (d.instructions as string) ?? "",
+    dailyRequiredInput: (d.dailyRequiredInput as string) ?? null,
+    weeklyRequiredInput: (d.weeklyRequiredInput as string) ?? null,
+    expectedByHour: typeof d.expectedByHour === "number" ? (d.expectedByHour as number) : null,
     createdAt: tsToIso(d.createdAt) ?? new Date(0).toISOString(),
     updatedAt: tsToIso(d.updatedAt) ?? tsToIso(d.createdAt) ?? new Date(0).toISOString(),
   };
@@ -1203,6 +1210,9 @@ export interface UpdateAiEmployeeInput {
   mission?: string;
   status?: AiEmployeeStatus;
   instructions?: string;
+  dailyRequiredInput?: string | null;
+  weeklyRequiredInput?: string | null;
+  expectedByHour?: number | null;
 }
 
 export async function updateAiEmployee(id: string, patch: UpdateAiEmployeeInput): Promise<void> {
@@ -1219,38 +1229,81 @@ export async function updateAiEmployee(id: string, patch: UpdateAiEmployeeInput)
  * placeholders, not transcribed from an original source doc this session
  * has access to — Winston can rename any of them from the Team page.
  */
-const AI_EMPLOYEE_SEED: { name: string; role: string; mission: string; instructions: string }[] = [
+const AI_EMPLOYEE_SEED: {
+  name: string;
+  role: string;
+  mission: string;
+  instructions: string;
+  dailyRequiredInput: string | null;
+  weeklyRequiredInput: string | null;
+  expectedByHour: number | null;
+}[] = [
   {
     name: "Charity",
     role: "AI SDR",
     mission: "Run first-contact outreach and qualify inbound/outbound prospects before they reach Winston's queue.",
     instructions: "Paste call/WhatsApp/email conversation summaries here after each prospect interaction.",
+    dailyRequiredInput: "Summary of today's outreach: who was contacted, who responded, and any newly qualified prospects.",
+    weeklyRequiredInput: null,
+    expectedByHour: 9,
   },
   {
     name: "Mwansa",
     role: "AI Researcher",
     mission: "Research prospect companies — fleet size, current tooling, decision-makers — before first contact.",
     instructions: "Paste research findings per prospect; note source and confidence where possible.",
+    dailyRequiredInput: null,
+    weeklyRequiredInput: "This week's researched accounts: fleet size, current tooling, and named decision-makers per company.",
+    expectedByHour: null,
   },
   {
     name: "Bupe",
     role: "AI Sales Coach",
     mission: "Review call transcripts and coach on what went well, what was missed, and the best next question.",
     instructions: "Paste call transcripts (sourceType: call transcript) for structured coaching feedback.",
+    dailyRequiredInput: "Any call transcripts from today, for coaching feedback.",
+    weeklyRequiredInput: null,
+    expectedByHour: null,
   },
   {
     name: "Chanda",
     role: "AI Market Intelligence",
     mission: "Track competitor moves, pricing signals, and market trends relevant to DeployFleet's positioning.",
     instructions: "Paste market/competitor findings as they come up, not on a fixed schedule.",
+    dailyRequiredInput: null,
+    weeklyRequiredInput: "This week's competitor/pricing/market signals relevant to DeployFleet's positioning.",
+    expectedByHour: null,
   },
   {
     name: "Natasha",
     role: "AI SEO",
     mission: "Monitor DeployFleet's organic search performance and content opportunities.",
     instructions: "Paste SEO/content research and ranking updates here.",
+    dailyRequiredInput: null,
+    weeklyRequiredInput: "This week's organic-search performance and content opportunities.",
+    expectedByHour: null,
   },
 ];
+
+/** Normalizes a stored extraction to the current ExtractionResult shape, backfilling the RS-2 richer fields so entries saved before RS-2 never yield undefined arrays in the UI. */
+function normalizeExtraction(raw: unknown): ExtractionResult | null {
+  if (!raw || typeof raw !== "object") return null;
+  const e = raw as Partial<ExtractionResult>;
+  return {
+    facts: e.facts ?? [],
+    tasks: e.tasks ?? [],
+    decisions: e.decisions ?? [],
+    risks: e.risks ?? [],
+    recommendations: e.recommendations ?? [],
+    contradictions: e.contradictions ?? [],
+    competitors: e.competitors ?? [],
+    decisionMakers: e.decisionMakers ?? [],
+    unansweredQuestions: e.unansweredQuestions ?? [],
+    timeline: e.timeline ?? null,
+    budget: e.budget ?? null,
+    callAnalysis: e.callAnalysis ?? null,
+  };
+}
 
 function inboxEntryFromDoc(doc: DocumentSnapshot): InboxEntry {
   const d = doc.data() ?? {};
@@ -1262,7 +1315,7 @@ function inboxEntryFromDoc(doc: DocumentSnapshot): InboxEntry {
     relatedEmployeeId: (d.relatedEmployeeId as string) ?? null,
     pastedAt: tsToIso(d.pastedAt) ?? new Date(0).toISOString(),
     extractionStatus: (d.extractionStatus as ExtractionStatus) ?? "pending",
-    extractionResult: (d.extractionResult as ExtractionResult) ?? null,
+    extractionResult: normalizeExtraction(d.extractionResult),
     reviewedByWinston: Boolean(d.reviewedByWinston),
     createdAt: tsToIso(d.createdAt) ?? new Date(0).toISOString(),
   };
@@ -1347,12 +1400,168 @@ export async function seedAiEmployees(): Promise<{ created: number; skipped: num
       mission: persona.mission,
       status: "active" satisfies AiEmployeeStatus,
       instructions: persona.instructions,
+      dailyRequiredInput: persona.dailyRequiredInput,
+      weeklyRequiredInput: persona.weeklyRequiredInput,
+      expectedByHour: persona.expectedByHour,
       createdAt: now,
       updatedAt: now,
     });
     created++;
   }
   return { created, skipped };
+}
+
+// ---------------------------------------------------------------------------
+// Revenue OS RS-2 — WorkerBriefing cadence tracking
+// docs/revenue-os-architecture.md §4.2, §5.3–5.4. A thin bookkeeping layer
+// over InboxEntry: it records WHICH entry counts as an AI worker's required
+// daily/weekly submission, so completeness can be shown without a second
+// content store. Never blocks any page (§5.4).
+// ---------------------------------------------------------------------------
+
+function todayIsoUtc(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function mondayIsoUtc(): string {
+  const now = new Date();
+  const diffToMonday = (now.getUTCDay() + 6) % 7;
+  const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - diffToMonday));
+  return monday.toISOString().slice(0, 10);
+}
+
+function periodKeyFor(cadence: BriefingCadence): string {
+  return cadence === "daily" ? todayIsoUtc() : mondayIsoUtc();
+}
+
+function workerBriefingFromDoc(doc: DocumentSnapshot): WorkerBriefing {
+  const d = doc.data() ?? {};
+  return {
+    id: doc.id,
+    employeeId: (d.employeeId as string) ?? "",
+    cadence: (d.cadence as BriefingCadence) ?? "daily",
+    periodKey: (d.periodKey as string) ?? "",
+    sourceInboxEntryId: (d.sourceInboxEntryId as string) ?? "",
+    status: (d.status as BriefingStatus) ?? "submitted",
+    createdAt: tsToIso(d.createdAt) ?? new Date(0).toISOString(),
+  };
+}
+
+/** Upsert the briefing for (employee, cadence, current period): re-pasting the same day just repoints it at the newest entry, it never creates duplicates. */
+export async function recordWorkerBriefing(employeeId: string, cadence: BriefingCadence, sourceInboxEntryId: string): Promise<WorkerBriefing> {
+  const db = getAdminFirestore();
+  const periodKey = periodKeyFor(cadence);
+  const existingSnap = await db.collection(WORKER_BRIEFINGS).where("employeeId", "==", employeeId).limit(200).get();
+  const existing = existingSnap.docs.find((doc) => {
+    const data = doc.data();
+    return data.cadence === cadence && data.periodKey === periodKey;
+  });
+  if (existing) {
+    await existing.ref.update({ sourceInboxEntryId, status: "submitted" satisfies BriefingStatus });
+    const updated = await existing.ref.get();
+    return workerBriefingFromDoc(updated);
+  }
+  const ref = await db.collection(WORKER_BRIEFINGS).add({
+    employeeId,
+    cadence,
+    periodKey,
+    sourceInboxEntryId,
+    status: "submitted" satisfies BriefingStatus,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  const doc = await ref.get();
+  return workerBriefingFromDoc(doc);
+}
+
+export interface ListWorkerBriefingsFilters {
+  employeeId?: string;
+  cadence?: BriefingCadence;
+  periodKey?: string;
+}
+
+export async function listWorkerBriefings(filters: ListWorkerBriefingsFilters = {}): Promise<WorkerBriefing[]> {
+  const db = getAdminFirestore();
+  const snapshot = await db.collection(WORKER_BRIEFINGS).orderBy("createdAt", "desc").limit(1000).get();
+  let briefings = snapshot.docs.map(workerBriefingFromDoc);
+  if (filters.employeeId) briefings = briefings.filter((b) => b.employeeId === filters.employeeId);
+  if (filters.cadence) briefings = briefings.filter((b) => b.cadence === filters.cadence);
+  if (filters.periodKey) briefings = briefings.filter((b) => b.periodKey === filters.periodKey);
+  return briefings;
+}
+
+export interface BriefingStatusItem {
+  employeeId: string;
+  employeeName: string;
+  role: string;
+  cadence: BriefingCadence;
+  requiredInput: string;
+  expectedByHour: number | null;
+  periodKey: string;
+  submitted: boolean;
+  sourceInboxEntryId: string | null;
+}
+
+export interface BriefingStatusReport {
+  items: BriefingStatusItem[];
+  submittedCount: number;
+  totalCount: number;
+  /** 0–100; 100 when nothing is required (no incompleteness to report). */
+  completenessPct: number;
+  dailyPeriodKey: string;
+  weeklyPeriodKey: string;
+}
+
+/**
+ * §5.3–5.4 — per active employee with a required input for the current
+ * period, whether that period's briefing has been submitted. Purely a
+ * report; it never gates anything.
+ */
+export async function getBriefingStatus(): Promise<BriefingStatusReport> {
+  const dailyPeriodKey = todayIsoUtc();
+  const weeklyPeriodKey = mondayIsoUtc();
+  const [employees, briefings] = await Promise.all([listAiEmployees(), listWorkerBriefings()]);
+
+  const submittedKey = (b: WorkerBriefing) => `${b.employeeId}|${b.cadence}|${b.periodKey}`;
+  const submitted = new Map<string, WorkerBriefing>();
+  for (const b of briefings) submitted.set(submittedKey(b), b);
+
+  const items: BriefingStatusItem[] = [];
+  for (const emp of employees) {
+    if (emp.status !== "active") continue;
+    if (emp.dailyRequiredInput) {
+      const match = submitted.get(`${emp.id}|daily|${dailyPeriodKey}`);
+      items.push({
+        employeeId: emp.id,
+        employeeName: emp.name,
+        role: emp.role,
+        cadence: "daily",
+        requiredInput: emp.dailyRequiredInput,
+        expectedByHour: emp.expectedByHour,
+        periodKey: dailyPeriodKey,
+        submitted: Boolean(match),
+        sourceInboxEntryId: match?.sourceInboxEntryId ?? null,
+      });
+    }
+    if (emp.weeklyRequiredInput) {
+      const match = submitted.get(`${emp.id}|weekly|${weeklyPeriodKey}`);
+      items.push({
+        employeeId: emp.id,
+        employeeName: emp.name,
+        role: emp.role,
+        cadence: "weekly",
+        requiredInput: emp.weeklyRequiredInput,
+        expectedByHour: emp.expectedByHour,
+        periodKey: weeklyPeriodKey,
+        submitted: Boolean(match),
+        sourceInboxEntryId: match?.sourceInboxEntryId ?? null,
+      });
+    }
+  }
+
+  const submittedCount = items.filter((i) => i.submitted).length;
+  const totalCount = items.length;
+  const completenessPct = totalCount === 0 ? 100 : Math.round((submittedCount / totalCount) * 100);
+  return { items, submittedCount, totalCount, completenessPct, dailyPeriodKey, weeklyPeriodKey };
 }
 
 function emailSendFromDoc(doc: DocumentSnapshot): EmailSend {

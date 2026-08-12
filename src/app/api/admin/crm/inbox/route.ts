@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/adminAccess";
 import { isFirebaseAdminConfigured } from "@/lib/firebaseAdmin";
-import { listInboxEntries } from "@/lib/crm";
+import { getAiEmployee, listInboxEntries, recordWorkerBriefing } from "@/lib/crm";
 import { runInboxExtraction } from "@/lib/ai/inboxExtraction";
 import type { InboxSourceType } from "@/lib/crmTypes";
 
@@ -61,5 +61,23 @@ export async function POST(request: Request) {
     relatedEmployeeId: body.relatedEmployeeId ?? null,
   });
 
-  return NextResponse.json({ ok: true, entry, reason });
+  // RS-2 §4.2 — an employee-scoped paste counts as that worker's required
+  // submission for the current period. Cadence follows the worker's config
+  // (daily preferred when set, else weekly). Best-effort: a briefing-record
+  // failure never fails the paste the salesperson just made.
+  let briefingRecorded = false;
+  if (body.relatedEmployeeId) {
+    try {
+      const employee = await getAiEmployee(body.relatedEmployeeId);
+      const cadence = employee?.dailyRequiredInput ? "daily" : employee?.weeklyRequiredInput ? "weekly" : null;
+      if (cadence) {
+        await recordWorkerBriefing(body.relatedEmployeeId, cadence, entry.id);
+        briefingRecorded = true;
+      }
+    } catch {
+      // swallow — the InboxEntry is already saved; completeness is a nicety.
+    }
+  }
+
+  return NextResponse.json({ ok: true, entry, reason, briefingRecorded });
 }

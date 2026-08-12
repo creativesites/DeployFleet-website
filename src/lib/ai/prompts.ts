@@ -107,13 +107,19 @@ The JSON object must have exactly these keys:
   "decisions": [{ "decisionText": "a short statement of a strategic decision implied or stated in the text", "reason": "why, grounded in the text" }],
   "risks": ["short phrases naming any risk or concern the text reveals"],
   "recommendations": ["short phrases suggesting a next step or approach"],
-  "contradictions": [{ "field": "the fact key that conflicts", "existingValue": "the value from Known context", "newValue": "the value implied by this text" }]
+  "contradictions": [{ "field": "the fact key that conflicts", "existingValue": "the value from Known context", "newValue": "the value implied by this text" }],
+  "competitors": ["names of any competing product, current tool, or provider the prospect mentioned"],
+  "decisionMakers": ["names or roles of people identified as decision-makers or influencers, e.g. 'John Banda (Operations Director)'"],
+  "unansweredQuestions": ["short phrases naming questions the prospect asked that weren't answered, or open questions we still need answered"],
+  "timeline": "a short phrase capturing any timing/urgency the prospect stated (e.g. 'wants to decide before year-end'), or null",
+  "budget": "a short phrase capturing any budget/spend signal the prospect stated (e.g. 'currently spends ~K8k/month on tracking'), or null"
 }
 
 Rules:
-- Every array may be empty — most text will not contain something for every category. Do not force an entry into a category where it does not clearly belong.
+- Every array may be empty and timeline/budget may be null — most text will not contain something for every category. Do not force an entry into a category where it does not clearly belong.
 - prospectRef must be a name string exactly as it appears (or is clearly implied) in the text, never a guessed or invented company name, and never a database id (you have no ids).
 - Only populate "contradictions" when the text's value for a fact genuinely conflicts with a value given to you in "Known context" — do not invent a prior value to contradict.
+- competitors, decisionMakers, timeline, and budget must come straight from the text — never inferred or invented. Leave them empty/null if the text doesn't state them.
 - Never invent a fact, task, or decision not actually supported by the text.
 - Output must be valid JSON and nothing else.`;
 
@@ -246,6 +252,24 @@ Rules:
 - Apply Winston's instruction precisely — don't rewrite parts of the email he didn't ask you to change beyond what's needed for the revision to read naturally.
 - Never invent a new fact about the prospect that wasn't already in the draft.
 - Output must be valid JSON and nothing else.`;
+
+/**
+ * Revenue OS RS-2 §5.6 — the Daily AI Synthesis roll-up. Turns today's raw
+ * extracted intelligence (facts/risks/recs/competitors/etc. from the AI
+ * team's briefings, plus WhatsApp signals) into a short "what changed
+ * today and what it means" narrative for Winston. Deterministic fallback
+ * (a plain counts sentence) ships when AI is unavailable (§6), so this
+ * prompt never has to apologize for missing data.
+ */
+export const DAILY_SYNTHESIS_SYSTEM_PROMPT = `You are writing Winston's end-of-day intelligence summary inside DeployFleet's own internal sales system. You'll be given a structured digest of everything the AI team surfaced today — briefing completeness, extracted facts, risks, recommendations, competitors mentioned, decision-makers, open questions, and WhatsApp activity. Write a tight briefing of what changed today and what Winston should take from it.
+
+Rules:
+- 3–5 short sentences (or up to 5 one-line bullets), plain text, no markdown headers.
+- Lead with the single most important shift, not a restatement of the counts.
+- Only mention things present in the digest — never invent a prospect, competitor, number, or event.
+- If the digest is thin, say so briefly and honestly rather than padding.
+- Write to Winston directly ("you"), plain-spoken, no corporate filler.
+- Output only the summary text — no preamble, no JSON, no headings.`;
 
 /**
  * Revenue OS RS-1 §5.7 — the OPTIONAL AI re-rank layer. The deterministic

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import TeamBriefingBars from "./TeamBriefingBars";
 import type { AiEmployee, Task } from "@/lib/crmTypes";
 
 /** Phase 1 §7.3 — the AI Workforce list. Cards link to each employee's dedicated page. */
@@ -61,8 +62,10 @@ export default function TeamTab({ firebaseAdminConfigured }: { firebaseAdminConf
   }
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {employees.map((emp) => {
+    <div className="space-y-5">
+      <TeamBriefingBars variant="full" />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {employees.map((emp) => {
         const openTasks = tasks.filter((t) => t.relatedEmployeeId === emp.id);
         return (
           <Link key={emp.id} href={`/admin/team/${emp.id}`} className="card-surface block p-4 hover:border-teal/50">
@@ -82,8 +85,9 @@ export default function TeamTab({ firebaseAdminConfigured }: { firebaseAdminConf
             <p className="mt-2 text-sm text-body line-clamp-2">{emp.mission}</p>
             <p className="mt-2 text-xs text-muted">{openTasks.length} open task{openTasks.length === 1 ? "" : "s"}</p>
           </Link>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

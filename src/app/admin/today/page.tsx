@@ -3,6 +3,7 @@ import { isFirebaseAdminConfigured } from "@/lib/firebaseAdmin";
 import PageHeader from "@/components/admin/PageHeader";
 import CommandStrip from "@/components/admin/CommandStrip";
 import CommandCenter from "@/components/admin/CommandCenter";
+import DailyBriefing from "@/components/admin/DailyBriefing";
 import TodayTab from "@/components/admin/TodayTab";
 
 export const metadata: Metadata = { title: "Today" };
@@ -21,6 +22,7 @@ export default function AdminTodayPage() {
       <PageHeader title="Today" description="Your command center — directive, targets, and the queue for right now." />
       <CommandStrip firebaseAdminConfigured={firebaseAdminConfigured} />
       <CommandCenter firebaseAdminConfigured={firebaseAdminConfigured} />
+      <DailyBriefing firebaseAdminConfigured={firebaseAdminConfigured} />
       <div className="mt-2">
         <h2 className="text-sm font-semibold text-navy">The queue</h2>
         <p className="mt-1 text-xs text-muted">Prospects due today or overdue, oldest first.</p>

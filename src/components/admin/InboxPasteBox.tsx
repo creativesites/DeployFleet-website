@@ -363,6 +363,43 @@ export default function InboxPasteBox({ relatedProspectId, relatedEmployeeId, de
             </div>
           )}
 
+          {(result.competitors.length > 0 ||
+            result.decisionMakers.length > 0 ||
+            result.unansweredQuestions.length > 0 ||
+            result.timeline ||
+            result.budget) && (
+            <div className="rounded-df-md border border-border bg-canvas p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">Intelligence signals</p>
+              <div className="mt-1.5 space-y-1 text-xs text-body">
+                {result.timeline && (
+                  <p>
+                    <span className="font-medium text-navy">Timeline:</span> {result.timeline}
+                  </p>
+                )}
+                {result.budget && (
+                  <p>
+                    <span className="font-medium text-navy">Budget:</span> {result.budget}
+                  </p>
+                )}
+                {result.decisionMakers.length > 0 && (
+                  <p>
+                    <span className="font-medium text-navy">Decision-makers:</span> {result.decisionMakers.join("; ")}
+                  </p>
+                )}
+                {result.competitors.length > 0 && (
+                  <p>
+                    <span className="font-medium text-navy">Competitors / current tools:</span> {result.competitors.join("; ")}
+                  </p>
+                )}
+                {result.unansweredQuestions.length > 0 && (
+                  <p>
+                    <span className="font-medium text-navy">Open questions:</span> {result.unansweredQuestions.join("; ")}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           {result.contradictions.length > 0 && (
             <div className="rounded-df-md border border-danger/30 bg-danger/5 p-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-danger">Contradictions</p>

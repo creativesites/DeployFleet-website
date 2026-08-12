@@ -32,6 +32,21 @@ interface RawExtraction {
   risks?: string[];
   recommendations?: string[];
   contradictions?: ExtractedContradiction[];
+  competitors?: string[];
+  decisionMakers?: string[];
+  unansweredQuestions?: string[];
+  timeline?: string | null;
+  budget?: string | null;
+}
+
+/** Guard the model's arrays down to clean string[] (drops non-strings/empties) — the richer RS-2 fields are display-only, so a loose model response degrades to fewer chips, never a crash. */
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === "string" && v.trim().length > 0).map((v) => v.trim());
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
 export interface RunInboxExtractionInput {
@@ -91,6 +106,11 @@ export async function runInboxExtraction(input: RunInboxExtractionInput): Promis
     risks: raw.risks ?? [],
     recommendations: raw.recommendations ?? [],
     contradictions: raw.contradictions ?? [],
+    competitors: stringList(raw.competitors),
+    decisionMakers: stringList(raw.decisionMakers),
+    unansweredQuestions: stringList(raw.unansweredQuestions),
+    timeline: nullableString(raw.timeline),
+    budget: nullableString(raw.budget),
     callAnalysis,
   };
 

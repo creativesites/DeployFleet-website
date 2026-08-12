@@ -15,6 +15,9 @@ export default function EmployeeDetail({ id }: { id: string }) {
   const [editingMission, setEditingMission] = useState(false);
   const [missionInput, setMissionInput] = useState("");
   const [instructionsInput, setInstructionsInput] = useState("");
+  const [dailyInput, setDailyInput] = useState("");
+  const [weeklyInput, setWeeklyInput] = useState("");
+  const [expectedByHour, setExpectedByHour] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -30,6 +33,9 @@ export default function EmployeeDetail({ id }: { id: string }) {
           setTasks(data.tasks);
           setMissionInput(data.employee.mission);
           setInstructionsInput(data.employee.instructions);
+          setDailyInput(data.employee.dailyRequiredInput ?? "");
+          setWeeklyInput(data.employee.weeklyRequiredInput ?? "");
+          setExpectedByHour(data.employee.expectedByHour !== null ? String(data.employee.expectedByHour) : "");
         } else {
           setError(data.reason ?? "unknown_error");
         }
@@ -49,10 +55,17 @@ export default function EmployeeDetail({ id }: { id: string }) {
   async function saveMission() {
     setSaving(true);
     try {
+      const hour = expectedByHour.trim() === "" ? null : Number(expectedByHour);
       await fetch(`/api/admin/crm/employees/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mission: missionInput, instructions: instructionsInput }),
+        body: JSON.stringify({
+          mission: missionInput,
+          instructions: instructionsInput,
+          dailyRequiredInput: dailyInput.trim() || null,
+          weeklyRequiredInput: weeklyInput.trim() || null,
+          expectedByHour: hour !== null && Number.isFinite(hour) && hour >= 0 && hour <= 23 ? hour : null,
+        }),
       });
       setEditingMission(false);
       load();
@@ -134,8 +147,22 @@ export default function EmployeeDetail({ id }: { id: string }) {
           <div className="mt-3">
             <p className="text-sm text-body">{employee.mission}</p>
             {employee.instructions && <p className="mt-1 text-xs text-muted">Standing instructions: {employee.instructions}</p>}
+            {(employee.dailyRequiredInput || employee.weeklyRequiredInput) && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {employee.dailyRequiredInput && (
+                  <span className="rounded-full border border-teal/40 bg-teal/10 px-2 py-0.5 text-[11px] font-medium text-teal">
+                    Daily briefing{employee.expectedByHour !== null ? ` · by ${String(employee.expectedByHour).padStart(2, "0")}:00` : ""}
+                  </span>
+                )}
+                {employee.weeklyRequiredInput && (
+                  <span className="rounded-full border border-border bg-canvas px-2 py-0.5 text-[11px] font-medium text-body">
+                    Weekly briefing
+                  </span>
+                )}
+              </div>
+            )}
             <button type="button" onClick={() => setEditingMission(true)} className="mt-2 text-xs text-teal hover:underline">
-              Edit mission / instructions
+              Edit mission / cadence
             </button>
           </div>
         ) : (
@@ -163,6 +190,54 @@ export default function EmployeeDetail({ id }: { id: string }) {
                 rows={2}
                 className="mt-1 w-full rounded-df-md border border-border bg-canvas px-3 py-2 text-sm text-navy outline-none focus:border-teal"
               />
+            </div>
+            <div className="rounded-df-md border border-border bg-canvas p-3">
+              <p className="text-xs font-semibold text-navy">Briefing cadence</p>
+              <p className="mt-0.5 text-[11px] text-muted">
+                What this worker is expected to submit. Pasting a conversation on this page marks the current
+                period&apos;s briefing as submitted, feeding the team completeness bars.
+              </p>
+              <div className="mt-2 space-y-2">
+                <div>
+                  <label htmlFor="daily-input" className="text-[11px] font-medium text-body">
+                    Daily required input (leave blank for none)
+                  </label>
+                  <input
+                    id="daily-input"
+                    value={dailyInput}
+                    onChange={(e) => setDailyInput(e.target.value)}
+                    placeholder="e.g. Summary of today's outreach and qualified prospects"
+                    className="mt-1 w-full rounded-df-md border border-border bg-card px-3 py-2 text-sm text-navy outline-none focus:border-teal"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="weekly-input" className="text-[11px] font-medium text-body">
+                    Weekly required input (leave blank for none)
+                  </label>
+                  <input
+                    id="weekly-input"
+                    value={weeklyInput}
+                    onChange={(e) => setWeeklyInput(e.target.value)}
+                    placeholder="e.g. This week's researched accounts and decision-makers"
+                    className="mt-1 w-full rounded-df-md border border-border bg-card px-3 py-2 text-sm text-navy outline-none focus:border-teal"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="expected-hour" className="text-[11px] font-medium text-body">
+                    Expected by hour (0–23, optional)
+                  </label>
+                  <input
+                    id="expected-hour"
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={expectedByHour}
+                    onChange={(e) => setExpectedByHour(e.target.value)}
+                    placeholder="9"
+                    className="mt-1 w-24 rounded-df-md border border-border bg-card px-3 py-2 text-sm text-navy outline-none focus:border-teal"
+                  />
+                </div>
+              </div>
             </div>
             <div className="flex gap-2">
               <button type="button" onClick={saveMission} disabled={saving} className="btn-primary text-xs disabled:opacity-50">

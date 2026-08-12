@@ -349,6 +349,18 @@ export interface ExtractionResult {
   risks: string[];
   recommendations: string[];
   contradictions: ExtractedContradiction[];
+  /**
+   * Revenue OS RS-2 §5.5 — the richer named-field taxonomy the brief asks
+   * for, on top of the generic facts/tasks/decisions above. Display-only
+   * signals that feed the Daily Synthesis roll-up; they are NOT written to
+   * the Fact/Task/Decision ledger by the apply route (they inform, they
+   * don't commit). Optional-safe: absent on an old entry, empty on most.
+   */
+  competitors: string[];
+  decisionMakers: string[];
+  unansweredQuestions: string[];
+  timeline: string | null;
+  budget: string | null;
   /** Sales Coach specialization (§6.4) — only present when sourceType is "call_transcript". */
   callAnalysis: CallAnalysis | null;
 }
@@ -391,8 +403,35 @@ export interface AiEmployee {
   status: AiEmployeeStatus;
   /** Standing instructions Winston has given this persona. */
   instructions: string;
+  /** Revenue OS RS-2 §4.2 — what this worker is expected to submit each day/week (plain-text prompt); null = no cadence tracked for that period. */
+  dailyRequiredInput: string | null;
+  weeklyRequiredInput: string | null;
+  /** e.g. 9 for "expected by 09:00"; null = no deadline tracked. */
+  expectedByHour: number | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Revenue OS RS-2 §4.2 — a thin bookkeeping layer over InboxEntry that
+ * tags which entry counts as an AI worker's required daily/weekly
+ * submission. Every briefing IS an InboxEntry; this adds only the cadence
+ * accounting for completeness tracking (§5.4), not a second content store.
+ */
+export type BriefingCadence = "daily" | "weekly";
+/** "submitted" = a briefing exists for its period; "pending" = the current period has none yet; "stale" is derived at read time (a submitted briefing whose period has passed). */
+export type BriefingStatus = "pending" | "submitted" | "stale";
+
+export interface WorkerBriefing {
+  id: string;
+  employeeId: string;
+  cadence: BriefingCadence;
+  /** "2026-08-13" for daily, the Monday "2026-08-10" for weekly. */
+  periodKey: string;
+  /** The InboxEntry this briefing points at — never a second copy of the content. */
+  sourceInboxEntryId: string;
+  status: BriefingStatus;
+  createdAt: string;
 }
 
 /** Phase 1 §4.8 — the system-wide activity feed and the audit trail the Decision Ledger's own reasoning depends on. Append-only, never edited or deleted. */
