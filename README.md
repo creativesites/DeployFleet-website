@@ -1207,6 +1207,32 @@ send-reporting UI yet, though `EmailSend` rows do carry `campaignId`;
 and no unsubscribe/opt-out mechanism, appropriate at this tool's actual
 scale (20/day, personal outreach) but worth adding before that changes.
 
+### WhatsApp Intelligence & Outreach Automation — planned, Phase 4 (not built)
+
+[`docs/whatsapp-intelligence-architecture.md`](docs/whatsapp-intelligence-architecture.md)
+is a full architecture document for controlled WhatsApp automation —
+number verification, WhatsApp messages becoming a real CRM activity
+source (facts/tasks/decisions, reusing the AI Inbox's own review-then-
+apply pattern), buying-signal detection feeding the existing
+`opportunityScore`, and a response-mode ladder mapped onto the
+Orchestrator's already-shipped autonomy levels (every send stays
+Level 0 — Winston approves every message — for the entire scope of that
+document). Grounded in an actual read of Winston's own Zuri product
+(`creativesites/Personal-Assistant`)'s production WhatsApp/conversation-
+intelligence stack (Baileys transport, session management, message
+pipeline, AI analysis) — what's directly portable, what needs adapting,
+and what's genuinely new engineering (a live WhatsApp-availability check
+exists as a Baileys library primitive but isn't wired up in either
+product yet) are each traced to real source files, not assumed. Also
+resolves the hosting question the base doc's own AI work never had to
+face: Baileys needs a persistent connection Vercel serverless can't
+hold, so this is planned as a small, separate, always-on service —
+never sharing infrastructure with the unrelated DeployFleet Odoo demo
+server. **Not yet implemented** — planning only, per Winston's own
+explicit "start with a document" instruction, the same discipline
+`docs/ai-marketing-os-architecture.md` was written under before any of
+its Phase 0–3 code existed.
+
 ### Admin dashboard (`/admin`)
 
 **Redesigned as a sidebar-navigated app, not a single route with

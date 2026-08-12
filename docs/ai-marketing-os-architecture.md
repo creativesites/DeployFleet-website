@@ -107,14 +107,14 @@ Translating the brief's layered diagram onto this stack:
                               │
                               ▼
                      ┌────────────────┐
-                     │ External world  │   Calls, WhatsApp — Winston pastes
-                     │ (via Winston,   │   the outcome back in via the AI
-                     │  not automated) │   Inbox (§7.1). No automated outbound
-                     └────────────────┘   messaging is in scope anywhere in
-                                           this plan (see §12).
+                     │ External world  │   Calls stay human-mediated, always.
+                     │ (Email: built.  │   Email outbound is built (capped,
+                     │  WhatsApp: see  │   server-side). WhatsApp outbound is
+                     │  Phase 4 doc.)  │   planned (docs/whatsapp-intelligence-
+                     └────────────────┘   architecture.md), not yet built.
 ```
 
-The key deviation from the brief's own diagram: **"External World" stays human-mediated.** Nothing in this plan has DeployFleet's AI calling, texting, or emailing a prospect directly — Winston (or an AI employee working outside this system, e.g. an actual SDR persona in a separate chat tool) does the real-world action, then reports back into the AI Inbox. That's a deliberate, not accidental, scope boundary — see §12.
+The key deviation from the brief's own diagram, **since narrowed by two real decisions**: calls stay human-mediated everywhere in this plan, permanently — that boundary never moved. Email and WhatsApp did: outbound email is built (§12, capped and server-side-enforced); controlled WhatsApp automation is planned as a separate Phase 4 document (`docs/whatsapp-intelligence-architecture.md`) rather than folded into this one, since it's large enough and grounded in enough external-repo research to warrant its own architecture doc, the same way this whole document was written before Phase 0 started.
 
 ---
 
@@ -549,7 +549,8 @@ Phase 3 (anti-procrastination — sits on top of Phase 2's System State + Orches
 
 Honest gaps, matching this project's own standing discipline of surfacing what a plan doesn't answer rather than silently picking an answer:
 
-- **Resolved: outbound automation is email-only, capped, and one-directional.** Winston has confirmed the actual scope: marketing emails go out via EmailJS (client-side sending, no new backend email service), capped at 20/day. **No call automation anywhere, ever** — calls and WhatsApp stay entirely human-mediated, as originally planned. Inbound stays human-mediated too: Winston copies responses from his email inbox back into the AI Inbox (§7.1) himself — there's no automated inbox-reading in scope. This means "External World stays human-mediated" (§3) is now accurate for every channel *except* the outbound half of email, which needs its own new subsystem: an `emailSends` collection (recipient, template, campaignId, sentAt, status), a per-day send counter enforcing the 20/day cap, and a `POST /api/admin/crm/email/send` route wrapping EmailJS's client SDK (EmailJS is designed for client-side sending with a public key, so the 20/day cap has to be enforced server-side in this new route regardless — never trust a client-side-only limit). Not scoped into Phase 0/1 above; natural home is alongside the Campaign/Outreach entity (§6.3) once that exists, since email sends are naturally campaign-scoped. Revisit sequencing once Phase 0 is done.
+- **Resolved and since built: outbound email.** Marketing emails go out via EmailJS, capped at 20/day, enforced server-side (`src/lib/email/emailjs.ts`, `POST /api/admin/crm/email/send`) — see `docs/email-templates.md`. Every send is logged (`emailSends` collection) and produces a real `Interaction` + `AuditEvent` on success.
+- **Superseded: "No call automation anywhere, ever — calls and WhatsApp stay entirely human-mediated."** That line was correct as originally scoped; Winston has since asked for controlled WhatsApp automation specifically (calls remain out of scope everywhere). See **`docs/whatsapp-intelligence-architecture.md`** — Phase 4 of this plan, a full architecture document in its own right, grounded in an actual audit of Zuri (`creativesites/Personal-Assistant`)'s existing WhatsApp/conversation-intelligence stack. Not yet implemented as of this writing.
 - **No background job scheduler is used anywhere in Phase 1/2** — every AI process (extraction, reconciliation, brief generation) is triggered by a page load or a button click, not a cron job. Vercel Cron is available and unused; the daily cycle (§21 of the original brief, folded into §9 above) would need it once "runs automatically every morning" becomes a real requirement rather than "Winston opens the Command Center and it's ready." Worth revisiting explicitly in Phase 3.
 - **`Fact.value` is a free-text string, not typed per-key** — deliberately, since a generic `facts` ledger covering arbitrary extracted attributes can't have a fixed TypeScript shape the way `ProspectIntelligence`'s named fields do. This trades type safety for flexibility; worth watching whether it becomes a real usability problem once there's enough data to want to query/filter facts by value, not just by key.
 - **No vector store or embedding pipeline is proposed anywhere in this plan** — the brief's "long-term memory" layer (§10 of the original brief) is handled here via Firestore queries + the Redis context cache, not semantic search. This is a real simplification versus the brief's own architecture diagram; it should hold fine at this system's actual scale (dozens to low hundreds of prospects, one human user) but is worth flagging as a deliberate scope cut, not an oversight.
