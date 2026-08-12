@@ -62,13 +62,40 @@ export interface GatewayStatus {
   connected: boolean;
   phoneNumber: string | null;
   status: "idle" | "connecting" | "connected";
+  qrDataUrl: string | null;
+  linkCode: string | null;
 }
+
+const IDLE_STATUS: GatewayStatus = { connected: false, phoneNumber: null, status: "idle", qrDataUrl: null, linkCode: null };
 
 /** §14 WA-0's connect/QR/status admin surface — whether a real WhatsApp session is live right now. */
 export async function getGatewayStatus(): Promise<GatewayStatus> {
   const result = await gatewayFetch<GatewayStatus>("/status");
-  if (!result.ok) return { connected: false, phoneNumber: null, status: "idle" };
+  if (!result.ok) return IDLE_STATUS;
   return result.data;
+}
+
+export interface ConnectGatewayResult {
+  ok: boolean;
+  reason?: string;
+  status?: GatewayStatus;
+}
+
+/**
+ * The one function that actually starts a WhatsApp session — mirrors
+ * the gateway's own `POST /connect` (§14 WA-0). Omit `phone` for the
+ * QR flow, pass digits-only for the pairing-code flow instead. Called
+ * from the admin dashboard's own "Connect WhatsApp" panel
+ * (WhatsAppInboxTab.tsx) via POST /api/admin/crm/whatsapp/gateway/connect
+ * — never automatically, always an explicit human click.
+ */
+export async function connectGateway(options: { phone?: string; forceNewQR?: boolean } = {}): Promise<ConnectGatewayResult> {
+  const result = await gatewayFetch<{ ok: boolean; status: GatewayStatus }>("/connect", {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+  if (!result.ok) return { ok: false, reason: result.reason };
+  return { ok: true, status: result.data.status };
 }
 
 export interface CheckAvailabilityResult {

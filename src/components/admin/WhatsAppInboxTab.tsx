@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import ChatInput from "./ChatInput";
+import WhatsAppConnectPanel from "./WhatsAppConnectPanel";
 import { CONVERSATION_STATE_LABEL, type ConversationState, type WhatsAppMessage, type WhatsAppMessageSenderType } from "@/lib/crmTypes";
 
 /**
@@ -254,7 +255,9 @@ export default function WhatsAppInboxTab({ firebaseAdminConfigured }: { firebase
   const selected = conversations?.find((c) => c.id === selectedId) ?? null;
 
   return (
-    <div className="flex h-[calc(100vh-220px)] min-h-[480px] overflow-hidden rounded-df-lg border border-border bg-card">
+    <>
+      <WhatsAppConnectPanel onConnected={loadConversations} />
+      <div className="flex h-[calc(100vh-280px)] min-h-[420px] overflow-hidden rounded-df-lg border border-border bg-card">
       {/* Conversation list */}
       <div className={`${selectedId ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-r border-border md:w-72`}>
         <div className="flex gap-1.5 border-b border-border p-2">
@@ -350,6 +353,7 @@ export default function WhatsAppInboxTab({ firebaseAdminConfigured }: { firebase
           </>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }
