@@ -636,3 +636,84 @@ export interface WhatsAppSend {
   sentAt: string;
   createdAt: string;
 }
+
+// ---------------------------------------------------------------------------
+// Revenue OS — Directives & Daily Goals (RS-0)
+// docs/revenue-os-architecture.md §4.1, §4.3. The "Direct" and target
+// halves of the Daily Command Center's Command Strip. Pure types only —
+// the Directive store is Firestore (crm.ts), the GoalsConfig store is the
+// diesel-price-style KeyValueStore (goals.ts).
+// ---------------------------------------------------------------------------
+
+/** §4.1 — a CEO/company objective. Multiple may be active at once (confirmed by Winston); never AI-authored. */
+export type DirectiveStatus = "active" | "archived";
+
+export interface Directive {
+  id: string;
+  /** e.g. "Primary company objective". */
+  title: string;
+  /** Free text — strategic priorities, constraints, explicit asks. */
+  body: string;
+  /** ISO Monday date when this is a weekly objective; null for a standing/primary directive. */
+  weekOf: string | null;
+  status: DirectiveStatus;
+  createdBy: "winston";
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * §4.3 — the configurable daily goal set. Replaces the two hardcoded
+ * TARGET_ATTEMPTS_PER_DAY/TARGET_MEANINGFUL_PER_DAY constants with a
+ * richer, per-weekday-overridable object. `prospects` is the primary
+ * "attempts" target the weekly scoreboard/SystemState already tracked;
+ * the rest are the brief's own §8 sub-buckets.
+ */
+export interface DailyGoalSet {
+  /** Distinct prospects worked in a day — the primary "attempts" target. */
+  prospects: number;
+  meaningfulConversations: number;
+  calls: number;
+  whatsapp: number;
+  emails: number;
+  followUps: number;
+  demos: number;
+  researchActions: number;
+}
+
+export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+/**
+ * Keyed 0 (Sunday) – 6 (Saturday); a weekday with no override falls back
+ * to `default`. Stored under a single GOALS_CONFIG key via getStore(),
+ * exactly the diesel-price precedent — not a Firestore collection.
+ */
+export interface GoalsConfig {
+  default: DailyGoalSet;
+  overrides: Partial<Record<Weekday, Partial<DailyGoalSet>>>;
+  updatedAt: string;
+}
+
+/** The shipped defaults — the two numbers Winston already validated (10 attempts / 5 meaningful), plus modest starting points for the new sub-buckets, all tunable on /admin/settings/daily-goals. */
+export const DEFAULT_DAILY_GOALS: DailyGoalSet = {
+  prospects: 10,
+  meaningfulConversations: 5,
+  calls: 6,
+  whatsapp: 6,
+  emails: 4,
+  followUps: 3,
+  demos: 1,
+  researchActions: 2,
+};
+
+/** Ordered for stable UI rendering + human labels for each goal field. */
+export const DAILY_GOAL_FIELDS: { key: keyof DailyGoalSet; label: string; tracked: boolean }[] = [
+  { key: "prospects", label: "Prospects worked", tracked: true },
+  { key: "meaningfulConversations", label: "Meaningful conversations", tracked: true },
+  { key: "calls", label: "Calls", tracked: true },
+  { key: "whatsapp", label: "WhatsApp", tracked: true },
+  { key: "emails", label: "Emails", tracked: true },
+  { key: "demos", label: "Demos", tracked: true },
+  { key: "followUps", label: "Follow-ups", tracked: false },
+  { key: "researchActions", label: "Research actions", tracked: false },
+];

@@ -59,7 +59,12 @@ function isWhatsAppProposal(p: OrchestratorProposal): boolean {
   return p.tool === "draft_whatsapp_message" || p.tool === "send_whatsapp_message";
 }
 
-/** Phase 2 §8.4 — the AI Command Center. Sits above the existing Visitor Intelligence Overview stats on /admin, not a new route. */
+/**
+ * Phase 2 §8.4 — the AI Command Center. Relocated in Revenue OS RS-0 §3
+ * from /admin (Overview) to the top of /admin/today, below the Command
+ * Strip, so the whole workday opens in one place. Shows pace/attention
+ * (System State), the Daily Rhythm nudges, and the Orchestrator ask-box.
+ */
 export default function CommandCenter({ firebaseAdminConfigured }: { firebaseAdminConfigured: boolean }) {
   const [state, setState] = useState<SystemState | null>(null);
   const [dueTodayCount, setDueTodayCount] = useState<number | null>(null);
@@ -234,8 +239,8 @@ export default function CommandCenter({ firebaseAdminConfigured }: { firebaseAdm
   return (
     <div className="mb-10 space-y-6">
       <div>
-        <h2 className="text-sm font-semibold text-navy">Command Center</h2>
-        <p className="mt-1 text-xs text-muted">DeployFleet&apos;s own pipeline — pace, attention, and what to do next.</p>
+        <h2 className="text-sm font-semibold text-navy">System state &amp; rhythm</h2>
+        <p className="mt-1 text-xs text-muted">Pace, attention, and what to do next — plus the Orchestrator.</p>
       </div>
 
       {loadError && <p className="text-sm text-danger">Couldn&apos;t load Command Center data ({loadError}).</p>}

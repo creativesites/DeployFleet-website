@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import CommandCenter from "./CommandCenter";
+import Link from "next/link";
 
 type Stats = {
   pageviews: {
@@ -74,7 +74,13 @@ export default function OverviewTab({ firebaseAdminConfigured }: { firebaseAdmin
 
   return (
     <div className="space-y-8">
-      <CommandCenter firebaseAdminConfigured={firebaseAdminConfigured} />
+      <div className="rounded-df-md border border-border bg-canvas p-4 text-sm text-body">
+        Winston&apos;s daily command center — directive, targets, the Orchestrator, and the prospect queue — now lives on{" "}
+        <Link href="/admin/today" className="font-medium text-teal hover:underline">
+          Today
+        </Link>
+        . This page stays focused on website visitor &amp; lead analytics.
+      </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {cards.map((c) => (

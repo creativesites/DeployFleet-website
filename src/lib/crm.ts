@@ -4,6 +4,7 @@ import { getAdminFirestore } from "./firebaseAdmin";
 import { classifyZambianPhone } from "./phoneRules";
 import { PROSPECT_SEED_ROWS } from "./prospectSeedData";
 import { invalidateEmployeeContext, invalidateGlobalContext, invalidateProspectContext } from "./ai/contextCache";
+import { getGoalsConfig } from "./goals";
 import type {
   AiEmployee,
   AiEmployeeStatus,
@@ -17,6 +18,9 @@ import type {
   Decision,
   DecisionScope,
   DecisionStatus,
+  Directive,
+  DirectiveStatus,
+  GoalsConfig,
   EmailSend,
   EmailSendStatus,
   EmailTemplateKey,
@@ -73,13 +77,10 @@ const AI_EMPLOYEES = "aiEmployees";
 const AUDIT_EVENTS = "auditEvents";
 const INBOX_ENTRIES = "inboxEntries";
 const EMAIL_SENDS = "emailSends";
+const DIRECTIVES = "directives";
 
 /** The Sales Playbook's own "up to 20 a day" cap (Winston's explicit instruction, see docs/ai-marketing-os-architecture.md §12) — enforced here, server-side, never trusted to the client. */
 export const DAILY_EMAIL_CAP = 20;
-
-/** Phase 0 §6.2's Weekly Targets — the Sales Playbook's own "10 attempts, 5 meaningful interactions" daily benchmark. A tunable constant, not a database-backed setting, same "not worth the complexity yet" choice Visitor Intelligence's scoring.ts already made for its own weight tables. */
-const TARGET_ATTEMPTS_PER_DAY = 10;
-const TARGET_MEANINGFUL_PER_DAY = 5;
 
 /** Which InteractionOutcomes count as "meaningful" per the Sales Playbook's own attempted-vs-meaningful distinction (crmTypes.ts's own InteractionOutcome doc comment). */
 const MEANINGFUL_OUTCOMES = new Set<InteractionOutcome>(["right-person", "meaningful-conversation", "demo-booked"]);
@@ -631,10 +632,97 @@ export async function updateCampaign(id: string, patch: UpdateCampaignInput): Pr
     .update({ ...patch, updatedAt: FieldValue.serverTimestamp() });
 }
 
+// ---------------------------------------------------------------------------
+// Revenue OS RS-0 — Directives (docs/revenue-os-architecture.md §4.1)
+// The "Direct" stage: CEO/company objectives pinned to the Command Strip.
+// Authored top-down by Winston, never AI-written. Multiple may be active
+// at once; archived, never hard-deleted, matching the Decision Ledger's
+// own append-only discipline.
+// ---------------------------------------------------------------------------
+
+function directiveFromDoc(doc: DocumentSnapshot): Directive {
+  const d = doc.data() ?? {};
+  return {
+    id: doc.id,
+    title: (d.title as string) ?? "",
+    body: (d.body as string) ?? "",
+    weekOf: (d.weekOf as string) ?? null,
+    status: (d.status as DirectiveStatus) ?? "active",
+    createdBy: "winston",
+    createdAt: tsToIso(d.createdAt) ?? new Date(0).toISOString(),
+    updatedAt: tsToIso(d.updatedAt) ?? tsToIso(d.createdAt) ?? new Date(0).toISOString(),
+  };
+}
+
+export interface ListDirectivesFilters {
+  status?: DirectiveStatus;
+}
+
+/** Active directives ordered for the Command Strip: standing (weekOf null) first, then week-dated ones newest first. */
+export async function listDirectives(filters: ListDirectivesFilters = {}): Promise<Directive[]> {
+  const db = getAdminFirestore();
+  const snapshot = await db.collection(DIRECTIVES).orderBy("createdAt", "desc").limit(200).get();
+  let directives = snapshot.docs.map(directiveFromDoc);
+  if (filters.status) directives = directives.filter((d) => d.status === filters.status);
+  return directives.sort((a, b) => {
+    if ((a.weekOf === null) !== (b.weekOf === null)) return a.weekOf === null ? -1 : 1;
+    if (a.weekOf !== null && b.weekOf !== null && a.weekOf !== b.weekOf) return a.weekOf < b.weekOf ? 1 : -1;
+    return a.createdAt < b.createdAt ? 1 : -1;
+  });
+}
+
+export interface CreateDirectiveInput {
+  title: string;
+  body: string;
+  weekOf?: string | null;
+}
+
+export async function createDirective(input: CreateDirectiveInput): Promise<Directive> {
+  const db = getAdminFirestore();
+  const now = FieldValue.serverTimestamp();
+  const ref = await db.collection(DIRECTIVES).add({
+    title: input.title,
+    body: input.body,
+    weekOf: input.weekOf ?? null,
+    status: "active" satisfies DirectiveStatus,
+    createdBy: "winston",
+    createdAt: now,
+    updatedAt: now,
+  });
+  // A directive is a global-scope strategic input the Orchestrator/context
+  // compiler should see — invalidate the same cache a global Decision does.
+  await invalidateGlobalContext();
+  const doc = await ref.get();
+  return directiveFromDoc(doc);
+}
+
+export interface UpdateDirectiveInput {
+  title?: string;
+  body?: string;
+  weekOf?: string | null;
+  status?: DirectiveStatus;
+}
+
+export async function updateDirective(id: string, patch: UpdateDirectiveInput): Promise<void> {
+  const db = getAdminFirestore();
+  await db
+    .collection(DIRECTIVES)
+    .doc(id)
+    .update({ ...patch, updatedAt: FieldValue.serverTimestamp() });
+  await invalidateGlobalContext();
+}
+
 export interface DayScoreboard {
   date: string;
+  /** Total interactions logged (the primary "attempts" metric). */
   attempts: number;
   meaningful: number;
+  /** Distinct prospects worked that day — the goal set's `prospects` target measures this. */
+  prospects: number;
+  calls: number;
+  whatsapp: number;
+  emails: number;
+  demos: number;
 }
 
 export interface WeeklyScoreboard {
@@ -642,18 +730,26 @@ export interface WeeklyScoreboard {
   days: DayScoreboard[];
   totalAttempts: number;
   totalMeaningful: number;
+  /** RS-0 §4.3 — the resolved goals config; the Command Strip resolves each day's own target from this. */
+  goals: GoalsConfig;
+  /** Back-compat surface for SystemState/TargetsTab: the `default` goal set's primary targets. */
   targetAttemptsPerDay: number;
   targetMeaningfulPerDay: number;
 }
 
 /**
- * Phase 0 §6.2 — the Operating Rhythm brief's own "10 attempts, 5
- * meaningful interactions" daily benchmark, made visible. `weekStartIso`
- * is the Monday (or whichever day the caller treats as week-start) of
- * the week to report on, as a plain YYYY-MM-DD date. Bounded fetch
- * across the whole `interactions` collection, filtered in memory by
- * date — the same composite-index-avoidance discipline as everywhere
- * else in this file; fine at this data volume.
+ * Phase 0 §6.2 / Revenue OS RS-0 §5.1 — the Operating Rhythm brief's own
+ * daily benchmark, made visible and now configurable. `weekStartIso` is
+ * the Monday (or whichever day the caller treats as week-start) of the
+ * week to report on, as a plain YYYY-MM-DD date. Bounded fetch across the
+ * whole `interactions` collection, filtered in memory by date — the same
+ * composite-index-avoidance discipline as everywhere else in this file.
+ *
+ * RS-0 extends the original attempts/meaningful pair with per-channel
+ * sub-counts (calls/WhatsApp/emails/demos) and a distinct-prospect count,
+ * so the Command Strip can show progress against each goal bucket, and
+ * reads its targets from the editable GoalsConfig rather than the two
+ * constants this used to hardcode.
  */
 export async function getWeeklyScoreboard(weekStartIso: string): Promise<WeeklyScoreboard> {
   const db = getAdminFirestore();
@@ -661,15 +757,20 @@ export async function getWeeklyScoreboard(weekStartIso: string): Promise<WeeklyS
   const weekEnd = new Date(weekStart);
   weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
 
-  const snapshot = await db.collection(INTERACTIONS).limit(5000).get();
+  const [snapshot, goals] = await Promise.all([
+    db.collection(INTERACTIONS).limit(5000).get(),
+    getGoalsConfig(),
+  ]);
 
   const days: DayScoreboard[] = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(weekStart);
     d.setUTCDate(d.getUTCDate() + i);
-    days.push({ date: d.toISOString().slice(0, 10), attempts: 0, meaningful: 0 });
+    days.push({ date: d.toISOString().slice(0, 10), attempts: 0, meaningful: 0, prospects: 0, calls: 0, whatsapp: 0, emails: 0, demos: 0 });
   }
   const dayIndex = new Map(days.map((d, i) => [d.date, i]));
+  // Track distinct prospects per day for the `prospects` goal bucket.
+  const prospectsSeen: Set<string>[] = days.map(() => new Set<string>());
 
   for (const doc of snapshot.docs) {
     const data = doc.data();
@@ -679,17 +780,32 @@ export async function getWeeklyScoreboard(weekStartIso: string): Promise<WeeklyS
     if (createdAt < weekStart || createdAt >= weekEnd) continue;
     const idx = dayIndex.get(createdAtIso.slice(0, 10));
     if (idx === undefined) continue;
-    days[idx].attempts++;
-    if (MEANINGFUL_OUTCOMES.has(data.outcome as InteractionOutcome)) days[idx].meaningful++;
+    const day = days[idx];
+    day.attempts++;
+    const outcome = data.outcome as InteractionOutcome | undefined;
+    if (outcome && MEANINGFUL_OUTCOMES.has(outcome)) day.meaningful++;
+    const type = data.type as InteractionType | undefined;
+    if (type === "call") day.calls++;
+    else if (type === "whatsapp") day.whatsapp++;
+    else if (type === "email") day.emails++;
+    // A demo counts once whether logged as a demo-typed interaction or any
+    // interaction whose outcome was a booked demo.
+    if (type === "demo" || outcome === "demo-booked") day.demos++;
+    const prospectId = data.prospectId as string | undefined;
+    if (prospectId) prospectsSeen[idx].add(prospectId);
   }
+  days.forEach((day, idx) => {
+    day.prospects = prospectsSeen[idx].size;
+  });
 
   return {
     weekStart: weekStartIso,
     days,
     totalAttempts: days.reduce((sum, d) => sum + d.attempts, 0),
     totalMeaningful: days.reduce((sum, d) => sum + d.meaningful, 0),
-    targetAttemptsPerDay: TARGET_ATTEMPTS_PER_DAY,
-    targetMeaningfulPerDay: TARGET_MEANINGFUL_PER_DAY,
+    goals,
+    targetAttemptsPerDay: goals.default.prospects,
+    targetMeaningfulPerDay: goals.default.meaningfulConversations,
   };
 }
 
