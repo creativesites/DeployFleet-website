@@ -464,12 +464,13 @@ export interface Interaction {
  * cap (enforced server-side, never trusted to the client) can be counted
  * accurately and a failed send is still visible in a prospect's history.
  */
-export type EmailTemplateKey = "cold_outreach" | "followup";
+export type EmailTemplateKey = "cold_outreach" | "followup" | "custom";
 export type EmailSendStatus = "sent" | "failed";
 
 export const EMAIL_TEMPLATE_LABEL: Record<EmailTemplateKey, string> = {
   cold_outreach: "Cold Outreach",
   followup: "Follow-up",
+  custom: "Custom (edit + AI assist)",
 };
 
 export interface EmailSend {

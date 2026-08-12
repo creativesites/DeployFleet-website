@@ -8,6 +8,21 @@ interface GatewayStatus {
   status: "idle" | "connecting" | "connected";
   qrDataUrl: string | null;
   linkCode: string | null;
+  unreachableReason?: string;
+}
+
+function describeUnreachable(reason: string): string {
+  switch (reason) {
+    case "timeout":
+      return "The WhatsApp gateway didn't respond in time — it may be restarting or unreachable.";
+    case "network_error":
+      return "Couldn't reach the WhatsApp gateway server at all — check it's running and the port is open.";
+    case "http_401":
+    case "unauthorized":
+      return "The gateway rejected our request — WHATSAPP_GATEWAY_SECRET doesn't match on both sides.";
+    default:
+      return `Couldn't reach the WhatsApp gateway (${reason}).`;
+  }
 }
 
 interface StatusResponse {
@@ -94,6 +109,15 @@ export default function WhatsAppConnectPanel({ onConnected }: { onConnected?: ()
     return (
       <div className="mb-4 rounded-df-md border border-border bg-canvas p-3 text-xs text-muted">
         WhatsApp gateway isn&apos;t configured — set <code>WHATSAPP_GATEWAY_URL</code>/<code>WHATSAPP_GATEWAY_SECRET</code> to enable it.
+      </div>
+    );
+  }
+
+  if (status.gateway.unreachableReason) {
+    return (
+      <div className="mb-4 rounded-df-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+        {describeUnreachable(status.gateway.unreachableReason)} This is different from &quot;not connected&quot; — the gateway may actually still
+        be connected, we just can&apos;t confirm it from here right now. Retrying automatically.
       </div>
     );
   }

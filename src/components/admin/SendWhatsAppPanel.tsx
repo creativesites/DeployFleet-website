@@ -6,7 +6,7 @@ import ChatInput from "./ChatInput";
 
 interface WhatsAppStatus {
   configured: boolean;
-  gateway: { connected: boolean; phoneNumber: string | null; status: "idle" | "connecting" | "connected" };
+  gateway: { connected: boolean; phoneNumber: string | null; status: "idle" | "connecting" | "connected"; unreachableReason?: string };
   sentToday: number;
   cap: number;
 }
@@ -15,6 +15,8 @@ function describeFailure(reason: string | undefined): string {
   switch (reason) {
     case "gateway_not_configured":
       return "The WhatsApp gateway isn't configured yet — see whatsapp-service/README.md.";
+    case "not_connected":
+      return "The WhatsApp gateway is running but no session is linked — connect it from the WhatsApp Inbox page first.";
     case "not_verified":
       return "This number hasn't been verified on WhatsApp yet — verify it first.";
     case "opted_out":
@@ -27,8 +29,11 @@ function describeFailure(reason: string | undefined): string {
       return "No phone number on file for this prospect.";
     case "send_failed":
       return "The gateway couldn't send this message.";
+    case "timeout":
+    case "network_error":
+      return "Couldn't reach the WhatsApp gateway server — check it's running.";
     default:
-      return "Couldn't complete this action.";
+      return reason ? `Couldn't complete this action (${reason}).` : "Couldn't complete this action.";
   }
 }
 
@@ -167,6 +172,16 @@ export default function SendWhatsAppPanel({ prospect, onChanged }: { prospect: P
         <p className="mt-3 text-xs text-muted">
           The WhatsApp gateway isn&apos;t connected yet — see <code>whatsapp-service/README.md</code> for the one-time setup (linking a real
           WhatsApp Business number).
+        </p>
+      ) : status?.gateway.unreachableReason ? (
+        <p className="mt-3 text-xs text-danger">
+          Can&apos;t reach the WhatsApp gateway right now ({status.gateway.unreachableReason}) — this doesn&apos;t necessarily mean the WhatsApp
+          session is disconnected, just that this app couldn&apos;t confirm its state. Verify/Send will fail until this clears.
+        </p>
+      ) : !status?.gateway.connected ? (
+        <p className="mt-3 text-xs text-muted">
+          No WhatsApp session is linked yet — connect it from the <a href="/admin/whatsapp" className="text-teal hover:underline">WhatsApp Inbox</a>{" "}
+          page first.
         </p>
       ) : prospect.whatsappOptedOut ? (
         <p className="mt-3 text-xs text-muted">This prospect opted out — outreach is permanently blocked.</p>

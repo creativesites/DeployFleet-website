@@ -8,6 +8,7 @@ import { EMAIL_TEMPLATE_LABEL, type EmailTemplateKey } from "@/lib/crmTypes";
 const TEMPLATE_ENV_KEY: Record<EmailTemplateKey, string> = {
   cold_outreach: "NEXT_PUBLIC_EMAILJS_TEMPLATE_COLD_OUTREACH",
   followup: "NEXT_PUBLIC_EMAILJS_TEMPLATE_FOLLOWUP",
+  custom: "NEXT_PUBLIC_EMAILJS_TEMPLATE_CUSTOM",
 };
 
 function siteUrl(): string {
@@ -18,6 +19,9 @@ interface RequestBody {
   prospectId?: string;
   template?: EmailTemplateKey;
   followupContext?: string;
+  /** Required when template === "custom" — the exact text Winston reviewed in SendEmailPanel, sent verbatim. */
+  customSubject?: string;
+  customBody?: string;
 }
 
 /**
@@ -59,6 +63,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, reason: "no_email_on_file" });
   }
 
+  if (body.template === "custom" && (!body.customSubject?.trim() || !body.customBody?.trim())) {
+    return NextResponse.json({ ok: false, reason: "invalid_request" }, { status: 400 });
+  }
+
   const sentToday = await countEmailSendsToday();
   if (sentToday >= DAILY_EMAIL_CAP) {
     return NextResponse.json({ ok: false, reason: "daily_cap_reached", sentToday, cap: DAILY_EMAIL_CAP });
@@ -81,16 +89,29 @@ export async function POST(request: Request) {
           from_role: senderRole,
           reply_to: replyTo,
         }
-      : {
-          to_name: toName,
-          to_email: prospect.contactEmail,
-          company_name: prospect.name,
-          followup_context: body.followupContext?.trim() || prospect.lastInteractionSummary || "our last conversation",
-          demo_link: demoLink,
-          from_name: senderName,
-          from_role: senderRole,
-          reply_to: replyTo,
-        };
+      : body.template === "followup"
+        ? {
+            to_name: toName,
+            to_email: prospect.contactEmail,
+            company_name: prospect.name,
+            followup_context: body.followupContext?.trim() || prospect.lastInteractionSummary || "our last conversation",
+            demo_link: demoLink,
+            from_name: senderName,
+            from_role: senderRole,
+            reply_to: replyTo,
+          }
+        : {
+            // custom — Winston's own (optionally AI-drafted/AI-revised) subject/body, sent verbatim.
+            to_name: toName,
+            to_email: prospect.contactEmail,
+            company_name: prospect.name,
+            subject: body.customSubject!.trim(),
+            body: body.customBody!.trim(),
+            demo_link: demoLink,
+            from_name: senderName,
+            from_role: senderRole,
+            reply_to: replyTo,
+          };
 
   const result = await sendEmailJsTemplate(templateId, templateParams);
 

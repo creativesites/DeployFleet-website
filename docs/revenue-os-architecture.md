@@ -139,6 +139,8 @@ interface Directive {
 
 Deliberately **not** built on top of the Decision Ledger's `scope: "global"` shape, even though it's structurally similar — a Directive is authored top-down by Winston-as-CEO and is meant to be singular/pinned ("the one thing at the top today"), where a global Decision is an accumulating list of standing strategic calls (some AI-proposed, most retrospective). Conflating them would make the Command Strip's "what's our objective right now" question ambiguous between "the newest decision" and "the one Winston actually pinned." A `Directive` can *reference* a Decision's id in its body text; no schema coupling.
 
+**Confirmed by Winston: multiple `Directive`s may be simultaneously active** — the §8 open question is resolved. `status: "active"` is not a singleton; the Command Strip (§5.1) shows every active Directive, not just one, ordered `weekOf: null` (standing) first, then `weekOf`-dated ones newest first. Nothing else about the shape above changes — this only affects the Command Strip's rendering and confirms `status` was already the right field to filter on, not something needing a new "is this the primary one" flag.
+
 ### 4.2 `WorkerBriefing` — generalizes `AiEmployee` + `InboxEntry` into the brief's §3/§4 cadence model
 
 ```ts
@@ -310,11 +312,11 @@ Today's card gains the fields the brief's §9 lists that already exist somewhere
 
 ### 5.12 AI-assisted messaging (tone variants)
 
-Extends the existing `WHATSAPP_DRAFT_SYSTEM_PROMPT`/email-draft pattern (SendWhatsAppPanel already has one-shot "AI draft"; email doesn't yet) with a tone-parameter argument (shorter / more conversational / more professional / less salesy / follow-up / first-contact / objection-response / meeting-request / re-engagement) folded into the prompt, plus a "why AI wrote this" one-liner returned alongside the draft (the model states its own reasoning in the same JSON response, not a second call). Fallback per §6: a small library of static templates per tone/purpose combination when AI is down — genuinely new content to write, not a code gap.
+**Superseded by the deeper, dedicated design in `docs/email-whatsapp-command-center-architecture.md` §4.4** — written the same session this placeholder note was added, after Winston asked to plan the Email and WhatsApp channels in full. Short version: email's AI draft/revise already shipped (the Custom template, free-text Revise instruction); WhatsApp's tone-chip variant list is scoped as that doc's EW-3. Fallback per §6 here still applies unchanged: a small static template library per tone/purpose when AI is down.
 
 ### 5.13 Conversation ingestion
 
-Already built (§2.3) for free text; extends to accept a pasted WhatsApp export/email thread directly (light parsing to strip WhatsApp's own `[HH:MM, DD/MM/YY] Name:` line prefixes before handing to the existing extraction prompt) rather than a new ingestion path.
+**Also elaborated in `docs/email-whatsapp-command-center-architecture.md`** — §4.5 scopes this per-channel (a new `email_reply` `InboxSourceType` value, an Email Center paste box) on top of the already-built general pipeline described here. No change to the mechanism itself, just which `sourceType` tags a given paste and where the paste box lives.
 
 ### 5.14–5.19 Visitor Intelligence expansion — now fully grounded (§2.7)
 
@@ -329,9 +331,9 @@ The reconciliation below replaces the earlier placeholder now that the underlyin
 
 1. **A live visitor↔prospect link.** This is the one piece with a direct dependency from §5.7's ranking engine. Two viable shapes, not yet chosen: (a) keep `linkedVisitorId` as the pointer and have the Daily Prospect Engine's `engagement` component do a live read of that visitor's current `engagementScore`/recent `VisitorEvent`s at rank-computation time (cheap — Today already does a bounded fetch; this adds one more read per linked prospect), or (b) go further and have `recordEvent()` itself check whether the visiting fingerprint/session resolves to an already-linked prospect and write a lightweight "this prospect had new website activity" marker Today can surface without a full re-read. (a) is the smaller, safer first step and is what RS-4 should build; (b) is a real future enhancement, not required for the brief's own "reprioritize today's queue" ask.
 2. **Account-level aggregation.** No `Company`/`Account` entity exists anywhere (§2.7) — this is a wholly new entity and a wholly new aggregation pass (grouping visitors by inferred company, likely via matched domain on a captured work email, or manual linking, since there's no reverse-DNS/company-enrichment API integrated anywhere in this codebase either). Scoped honestly, this is its own sub-project, not a checkbox inside RS-4 — see the open question in §8.
-3. **Google Maps-based geographic intelligence.** Zero geocoding, zero maps SDK anywhere in the codebase today (§2.7). Building this for real needs: a lat/lng source (either IP-geolocation-provider coordinates captured at the same point `country`/`city` already are, or a client-side browser Geolocation-API prompt — the former is far more realistic given this is B2B site traffic, not a consented mobile app), a Maps Embed/JS API key (a real new cost line and a real new secret to manage, per this project's own credential-handling discipline), and a new map component — none of which exist as partial work to extend. Scoped as its own slice, gated behind Winston confirming the Google Maps API cost/key management is worth it for what's currently a country/city table that already works.
+3. **Google Maps-based geographic intelligence — confirmed skipped, not built.** Winston's explicit call: this is out of scope for now. Zero geocoding, zero maps SDK anywhere in the codebase today (§2.7), and it stays that way — the existing country/city table (`GeographyTab.tsx`) remains the geography surface. Not resurrected as an open question; if it comes back later, it needs its own fresh scoping pass (lat/lng source, API key/cost, a new map component), none of which exist as partial work today.
 
-**Net effect on RS-4's scope (§7):** the phase splits cleanly into "the live link" (small, real, unblocks §5.7) and "account intelligence + maps" (large, genuinely new subsystems each). The rollout plan in §7 below reflects this split rather than treating RS-4 as one undifferentiated block.
+**Net effect on RS-4's scope (§7):** the phase splits into "the live link" (small, real, unblocks §5.7) and "account intelligence" (large, a genuinely new subsystem, and now the only item left in that second bucket since Maps is off the table). The rollout plan in §7 below reflects this split rather than treating RS-4 as one undifferentiated block.
 
 ### 5.20 Marketing Intelligence (`/admin/intelligence`)
 
@@ -404,11 +406,10 @@ RS-4a — Live visitor↔prospect link
   patterns only (§5.21) — no Search Console integration
   Marketing Intelligence's referrer/landing-page pattern slice (§5.20/5.21)
 
-RS-4b — Account intelligence + Google Maps geography (larger, separately scoped)
+RS-4b — Account intelligence (larger, separately scoped; Google Maps geography confirmed
+  out of scope — see §5.14-19 item 3)
   Company/Account entity + aggregation pass (§5.14-19 item 2) — needs its own scoping
   pass with Winston before starting, per §8
-  Google Maps geographic intelligence (§5.14-19 item 3) — needs a Maps API key/cost
-  decision and a lat/lng data source decision before starting, per §8
 
 RS-5 — Motivation + EOD debrief
   VictoryLogEntry, streaks, Weekly Wins
@@ -422,7 +423,8 @@ RS-4 is split into a small, well-understood slice (4a, unblocks §5.7's ranking 
 ## 8. Open questions & risks — flagged, not resolved here
 
 - **§3's Command-Center-relocation is a real UX change Winston should confirm before RS-0 ships**, not just this document's own inference from his brief — moving System State/Daily Rhythm/the Orchestrator ask-box off `/admin` changes what every existing bookmark/muscle-memory click does.
-- **Whether `Directive` should support more than one simultaneously-active entry** (the brief shows one "primary objective" but also a separate weekly objective) — modeled here as `weekOf: null` (standing) vs. `weekOf: <date>` (that week's), both allowed active at once; worth Winston's explicit confirmation this is the right shape before building the UI around it.
+- ~~**Whether `Directive` should support more than one simultaneously-active entry**~~ — **resolved**: yes, confirmed by Winston. §4.1 updated; the Command Strip shows every active Directive, standing ones first.
 - **The deterministic ranking weights (§5.7) are a genuine judgment call with no existing data to validate against yet** — the brief's own suggested percentages are a reasonable starting point, not something this codebase has evidence for; expect to tune them after a few weeks of real use, the same "needs real data" caveat `ai-marketing-os-architecture.md` already applied to messaging-performance learning. **A real, newly-identified wrinkle from §2.7's grounding**: the existing visitor-scoring system already has the "weights can't be retroactively recalculated against historical data" limitation — worth designing the ranking-weights config (and any future re-tuning UI) to either accept that same limitation explicitly, or store enough raw signal to allow a recompute, rather than silently inheriting the same gap.
-- **Account-level intelligence (§5.14-19 item 2) and Google Maps geography (item 3) need their own scoping conversations with Winston before RS-4b starts** — both are confirmed-from-zero new subsystems now that the grounding is complete (no `Company` entity exists at all; no geocoding/Maps integration exists at all), not extensions of anything already built. Specifically open: whether account matching should be domain-based (needs a captured work-email domain per visitor, which isn't captured today either) or manual; and whether a Google Maps API key/billing relationship is worth taking on for what's currently a working country/city table, or whether a lighter static-map/no-map alternative satisfies the actual need.
+- **Account-level intelligence (§5.14-19 item 2) still needs its own scoping conversation with Winston before RS-4b starts** — a confirmed-from-zero new subsystem now that the grounding is complete (no `Company` entity exists at all), not an extension of anything already built. Specifically open: whether account matching should be domain-based (needs a captured work-email domain per visitor, which isn't captured today either) or manual.
+- ~~**Google Maps geographic intelligence**~~ — **resolved**: skipped for now, confirmed by Winston. Not scheduled in any RS phase; §5.14-19 item 3 updated to reflect this is a deliberate scope cut, not a pending decision.
 - **SEO Intelligence in the brief's own keyword/search-visibility sense is out of scope for this rollout** (§5.21) — it needs a new external integration (Search Console API at minimum) this codebase has no precedent for, distinct from the referrer/content-performance slice that ships as part of RS-4a.

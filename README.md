@@ -1321,6 +1321,39 @@ Verified: `tsc`/`eslint`/`vitest`/`next build` all pass clean on the main
 app; `whatsapp-service`'s own `tsc`/`npm run build` pass clean. **Still
 not live-verified** — same standing caveat.
 
+**Two real production bugs fixed in a later session**, both root-caused
+against the live demo deploy: (1) the WhatsApp status/verify gateway
+client (`gatewayClient.ts`) was discarding the gateway's own error
+`reason` on any non-2xx response and substituting a generic `http_503`
+— so a genuinely unreachable gateway and a gateway reporting "no session
+linked" rendered identically as "Couldn't complete this action," which
+is exactly why "still shows Connect" and "Verify number isn't working"
+were undiagnosable from the UI. Fixed by parsing the error body and
+surfacing its real `reason`, and by giving `WhatsAppConnectPanel`/
+`SendWhatsAppPanel` a distinct "can't reach the gateway" state, separate
+from "gateway says disconnected." (2) EmailJS's "The recipients address
+is empty" — not a code bug (this app has always sent a correct
+`to_email` value); the templates' own EmailJS-dashboard Settings → "To
+Email" field was never pointed at `{{to_email}}`. Documented as the
+critical, easy-to-miss step in `docs/email-templates.md`. The same
+session also shipped a third, fully-editable **Custom** email template
+with AI Draft/Revise (`POST /api/admin/crm/email/draft`, same Level-0
+"always a proposal, never auto-sent" discipline as WhatsApp's own AI
+draft) — see `docs/email-templates.md` §2's Template 3.
+
+The fuller vision for both channels — a real Email Center workspace
+(WhatsApp already has one), a unified chat timeline with AI-extracted
+facts/tasks/decisions rendered inline, and tone-variant messaging — is
+planned, not yet built, in
+[`docs/email-whatsapp-command-center-architecture.md`](docs/email-whatsapp-command-center-architecture.md),
+which also elaborates
+[`docs/revenue-os-architecture.md`](docs/revenue-os-architecture.md)
+§5.12/§5.13. `docs/revenue-os-architecture.md` itself is a separate,
+larger planning document (not yet implemented) for evolving `/admin/today`
+into a full command-center workday loop — Directives, AI team briefings,
+a deterministic prospect-ranking engine, and more — written the same
+research-before-code way as every architecture doc in this list.
+
 ### Admin dashboard (`/admin`)
 
 **Redesigned as a sidebar-navigated app, not a single route with

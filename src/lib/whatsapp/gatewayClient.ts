@@ -28,6 +28,15 @@ function gatewayUrl(path: string): string {
   return `${base}${path}`;
 }
 
+/**
+ * Real bug fixed here: on a non-2xx response this used to discard the
+ * gateway's own JSON body (`{ ok: false, reason: "not_connected" }` etc.)
+ * and synthesize a generic `http_503`, so every failure past "reachable"
+ * collapsed into the same undiagnosable code. `/status` itself never
+ * returns non-2xx (see below), so this specifically affects
+ * checkAvailability()/sendText()/connectGateway() — exactly the calls
+ * behind "Verify number isn't working."
+ */
 async function gatewayFetch<T>(path: string, init?: RequestInit): Promise<{ ok: true; data: T } | { ok: false; reason: string }> {
   if (!isGatewayConfigured()) {
     return { ok: false, reason: "gateway_not_configured" };
@@ -46,7 +55,9 @@ async function gatewayFetch<T>(path: string, init?: RequestInit): Promise<{ ok: 
       signal: controller.signal,
     });
     if (!response.ok) {
-      return { ok: false, reason: `http_${response.status}` };
+      const body = await response.json().catch(() => null);
+      const bodyReason = body && typeof body === "object" && "reason" in body ? (body as { reason?: unknown }).reason : undefined;
+      return { ok: false, reason: typeof bodyReason === "string" && bodyReason ? bodyReason : `http_${response.status}` };
     }
     const data = (await response.json()) as T;
     return { ok: true, data };
@@ -64,14 +75,27 @@ export interface GatewayStatus {
   status: "idle" | "connecting" | "connected";
   qrDataUrl: string | null;
   linkCode: string | null;
+  /**
+   * Set only when this status is a fallback because the gateway itself
+   * couldn't be reached (network/timeout/auth/5xx) — distinct from the
+   * gateway genuinely reporting `status: "idle"`. Without this,
+   * "can't reach the gateway" and "gateway says disconnected" rendered
+   * as the exact same "Connect WhatsApp" empty state, which is exactly
+   * why the "still shows Connect" bug was undiagnosable from the UI
+   * alone. See WhatsAppConnectPanel/SendWhatsAppPanel for how this
+   * is surfaced.
+   */
+  unreachableReason?: string;
 }
 
-const IDLE_STATUS: GatewayStatus = { connected: false, phoneNumber: null, status: "idle", qrDataUrl: null, linkCode: null };
+function idleStatus(unreachableReason?: string): GatewayStatus {
+  return { connected: false, phoneNumber: null, status: "idle", qrDataUrl: null, linkCode: null, unreachableReason };
+}
 
 /** §14 WA-0's connect/QR/status admin surface — whether a real WhatsApp session is live right now. */
 export async function getGatewayStatus(): Promise<GatewayStatus> {
   const result = await gatewayFetch<GatewayStatus>("/status");
-  if (!result.ok) return IDLE_STATUS;
+  if (!result.ok) return idleStatus(result.reason);
   return result.data;
 }
 
