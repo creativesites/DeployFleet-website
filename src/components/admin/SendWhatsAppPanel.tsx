@@ -50,7 +50,7 @@ export default function SendWhatsAppPanel({ prospect, onChanged }: { prospect: P
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
-    fetch("/api/admin/crm/whatsapp/status")
+    fetch("/api/admin/crm/whatsapp/status", { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => data.ok && setStatus(data));
   }, []);

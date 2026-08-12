@@ -3,7 +3,9 @@ import { requireAdmin } from "@/lib/adminAccess";
 import { isFirebaseAdminConfigured } from "@/lib/firebaseAdmin";
 import { getProspect, getWhatsAppConversation, listWhatsAppMessages } from "@/lib/crm";
 
-/** The Inbox's message-thread pane. */
+/** The Inbox's message-thread pane — polled every 10s while open, so it needs the same no-store discipline as the status endpoint. */
+export const dynamic = "force-dynamic";
+
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = await requireAdmin();
   if (denied) return denied;
@@ -17,5 +19,5 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const [prospect, messages] = await Promise.all([getProspect(conversation.prospectId), listWhatsAppMessages(id)]);
 
-  return NextResponse.json({ ok: true, conversation, prospect, messages });
+  return NextResponse.json({ ok: true, conversation, prospect, messages }, { headers: { "Cache-Control": "no-store, must-revalidate" } });
 }

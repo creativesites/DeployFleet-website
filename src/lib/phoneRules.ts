@@ -83,3 +83,24 @@ export function classifyZambianPhone(raw: string | null | undefined): PhoneClass
 
   return { type: "unknown", carrier: null, recommendedChannel: "call", patternAnomaly };
 }
+
+/**
+ * WhatsApp's own `onWhatsApp()` primitive (the gateway's checkAvailability(),
+ * §6 of docs/whatsapp-intelligence-architecture.md) needs the full
+ * international digit string — country code, no leading trunk "0" — not
+ * whatever local/domestic format a number happens to be stored in.
+ * `Prospect.contactPhone`/`contactWhatsapp` are stored as originally
+ * entered (often domestic "0977xxxxxx"), so every call site that hands a
+ * phone number to the gateway must normalize through this first — a real
+ * bug caught live on the demo server (verify was silently checking the
+ * wrong digit string entirely, e.g. "0977123456" instead of
+ * "260977123456"). Reuses classifyZambianPhone()'s own leading-zero/
+ * country-code stripping logic rather than re-deriving it.
+ */
+export function toInternationalPhoneDigits(raw: string): string {
+  const digits = normalizeDigits(raw);
+  let local = digits;
+  if (local.startsWith(ZAMBIA_RULES.countryCode)) local = local.slice(ZAMBIA_RULES.countryCode.length);
+  else if (local.startsWith("0")) local = local.slice(1);
+  return `${ZAMBIA_RULES.countryCode}${local}`;
+}

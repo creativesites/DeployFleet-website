@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyZambianPhone } from "./phoneRules";
+import { classifyZambianPhone, toInternationalPhoneDigits } from "./phoneRules";
 
 describe("classifyZambianPhone", () => {
   it("classifies a 211 Lusaka landline", () => {
@@ -51,5 +51,19 @@ describe("classifyZambianPhone", () => {
   it("returns unknown/call for an unrecognized prefix", () => {
     const result = classifyZambianPhone("+260 300 000 000");
     expect(result.type).toBe("unknown");
+  });
+});
+
+describe("toInternationalPhoneDigits", () => {
+  it("converts a domestic-format number (leading 0) to the full international digit string", () => {
+    expect(toInternationalPhoneDigits("0977929253")).toBe("260977929253");
+  });
+
+  it("leaves an already-international number's digits unchanged", () => {
+    expect(toInternationalPhoneDigits("+260 977 929 253")).toBe("260977929253");
+  });
+
+  it("prefixes a bare local number with no leading 0 or country code", () => {
+    expect(toInternationalPhoneDigits("977929253")).toBe("260977929253");
   });
 });

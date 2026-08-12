@@ -174,7 +174,7 @@ export default function WhatsAppInboxTab({ firebaseAdminConfigured }: { firebase
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const loadConversations = useCallback(() => {
-    fetch("/api/admin/crm/whatsapp/conversations")
+    fetch("/api/admin/crm/whatsapp/conversations", { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => data.ok && setConversations(data.conversations));
   }, []);
@@ -187,7 +187,7 @@ export default function WhatsAppInboxTab({ firebaseAdminConfigured }: { firebase
   }, [firebaseAdminConfigured, loadConversations]);
 
   const loadThread = useCallback((id: string) => {
-    fetch(`/api/admin/crm/whatsapp/conversations/${id}/messages`)
+    fetch(`/api/admin/crm/whatsapp/conversations/${id}/messages`, { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
         if (!data.ok) return;

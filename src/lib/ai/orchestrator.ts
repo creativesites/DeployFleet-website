@@ -6,6 +6,7 @@ import { ORCHESTRATOR_SYSTEM_PROMPT } from "./prompts";
 import { createAuditEvent, getProspect, listProspects, updateProspect } from "@/lib/crm";
 import { PIPELINE_STAGE_LABEL } from "@/lib/crmTypes";
 import { checkAvailability, isGatewayConfigured } from "@/lib/whatsapp/gatewayClient";
+import { toInternationalPhoneDigits } from "@/lib/phoneRules";
 import type { ToolCallOutcome, ToolDefinition } from "./providers/types";
 
 /**
@@ -113,8 +114,9 @@ async function verifyWhatsAppNumber(args: Record<string, unknown>): Promise<Tool
   if (!prospect) return { summary: "No such prospect — nothing to verify." };
   if (!isGatewayConfigured()) return { summary: "WhatsApp gateway isn't connected yet — nothing to verify against." };
 
-  const phone = prospect.contactWhatsapp ?? prospect.contactPhone;
-  if (!phone) return { summary: `${prospect.name} has no phone number on file.` };
+  const rawPhone = prospect.contactWhatsapp ?? prospect.contactPhone;
+  if (!rawPhone) return { summary: `${prospect.name} has no phone number on file.` };
+  const phone = toInternationalPhoneDigits(rawPhone);
 
   const result = await checkAvailability(phone);
   if (!result.ok) return { summary: `Couldn't verify ${prospect.name}'s number (${result.reason}).` };

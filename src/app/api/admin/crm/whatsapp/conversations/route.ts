@@ -26,6 +26,8 @@ export interface WhatsAppConversationListItem {
  * this route doesn't need its own filtering logic to enforce that, it's
  * already structurally true of the data it reads.
  */
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const denied = await requireAdmin();
   if (denied) return denied;
@@ -59,5 +61,5 @@ export async function GET() {
     });
   }
 
-  return NextResponse.json({ ok: true, conversations: items });
+  return NextResponse.json({ ok: true, conversations: items }, { headers: { "Cache-Control": "no-store, must-revalidate" } });
 }

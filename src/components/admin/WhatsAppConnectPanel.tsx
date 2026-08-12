@@ -39,7 +39,7 @@ export default function WhatsAppConnectPanel({ onConnected }: { onConnected?: ()
   const [expanded, setExpanded] = useState(false);
 
   function loadStatus() {
-    fetch("/api/admin/crm/whatsapp/status")
+    fetch("/api/admin/crm/whatsapp/status", { cache: "no-store" })
       .then((res) => res.json())
       .then((data: StatusResponse) => {
         setStatus(data);

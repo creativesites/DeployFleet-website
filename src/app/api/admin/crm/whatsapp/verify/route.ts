@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/adminAccess";
 import { isFirebaseAdminConfigured } from "@/lib/firebaseAdmin";
 import { createAuditEvent, getProspect, getProspectContact, updateProspect, updateProspectContact } from "@/lib/crm";
 import { checkAvailability, isGatewayConfigured } from "@/lib/whatsapp/gatewayClient";
+import { toInternationalPhoneDigits } from "@/lib/phoneRules";
 
 interface RequestBody {
   prospectId?: string;
@@ -39,8 +40,14 @@ export async function POST(request: Request) {
   const prospect = await getProspect(body.prospectId);
   if (!prospect) return NextResponse.json({ ok: false, reason: "not_found" }, { status: 404 });
 
-  const phone = body.contactId ? (await getProspectContact(body.contactId))?.phone : (prospect.contactWhatsapp ?? prospect.contactPhone);
-  if (!phone) return NextResponse.json({ ok: false, reason: "no_phone_on_file" });
+  const rawPhone = body.contactId ? (await getProspectContact(body.contactId))?.phone : (prospect.contactWhatsapp ?? prospect.contactPhone);
+  if (!rawPhone) return NextResponse.json({ ok: false, reason: "no_phone_on_file" });
+  // Real bug caught live on the demo server: Prospect.contactPhone/
+  // contactWhatsapp are stored as originally entered (often domestic
+  // "0977xxxxxx"), but WhatsApp's onWhatsApp() needs the full
+  // international digit string — passing the raw stored value silently
+  // checked the wrong number entirely.
+  const phone = toInternationalPhoneDigits(rawPhone);
 
   const result = await checkAvailability(phone);
   if (!result.ok) {
