@@ -142,6 +142,41 @@ export async function checkAvailability(phone: string): Promise<CheckAvailabilit
   return { ok: true, exists: result.data.exists, jid: result.data.jid };
 }
 
+export interface GatewayHealthResult {
+  reachable: boolean;
+  reason?: string;
+  latencyMs?: number;
+}
+
+/**
+ * Hits the gateway's unauthenticated `/health` route directly — no
+ * bearer secret involved, so this answers one narrow question cleanly:
+ * "is the whatsapp-service process even up and network-reachable from
+ * this Vercel deployment at all," independent of whether a WhatsApp
+ * session is connected. Deliberately doesn't reuse gatewayFetch() (which
+ * always sends the Authorization header) so a wrong/rotated secret can't
+ * masquerade as "gateway unreachable" — those are different failure
+ * modes and worth telling apart in the UI (WhatsAppConnectPanel's
+ * diagnostics panel).
+ */
+export async function checkGatewayHealth(): Promise<GatewayHealthResult> {
+  if (!isGatewayConfigured()) return { reachable: false, reason: "gateway_not_configured" };
+  const started = Date.now();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetch(gatewayUrl("/health"), { signal: controller.signal });
+    const latencyMs = Date.now() - started;
+    if (!response.ok) return { reachable: false, reason: `http_${response.status}`, latencyMs };
+    return { reachable: true, latencyMs };
+  } catch (error) {
+    const reason = error instanceof Error && error.name === "AbortError" ? "timeout" : "network_error";
+    return { reachable: false, reason };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export interface SendTextResult {
   ok: boolean;
   reason?: string;
