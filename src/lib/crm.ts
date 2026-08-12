@@ -1555,6 +1555,18 @@ export async function listWhatsAppMessages(conversationId: string, limitCount = 
   return snapshot.docs.map(messageFromDoc).sort((a, b) => (a.whatsappTimestamp < b.whatsappTimestamp ? -1 : 1));
 }
 
+/** The Inbox's own reply-composer needs "has the prospect replied since my last send" (see the cooldown carve-out in whatsapp/send/route.ts), not the full thread — this is the one extra query that answers it. */
+export async function getLastMessageForConversation(conversationId: string): Promise<WhatsAppMessage | null> {
+  const messages = await listWhatsAppMessages(conversationId, 500);
+  if (messages.length === 0) return null;
+  return messages[messages.length - 1];
+}
+
+/** The Inbox marks a conversation read the moment Winston opens it — resets the badge and clears requiresResponse, since he's looking at it right now. */
+export async function markConversationRead(id: string): Promise<void> {
+  await getAdminFirestore().collection(WHATSAPP_CONVERSATIONS).doc(id).update({ unreadCount: 0, requiresResponse: false });
+}
+
 function analysisFromDoc(doc: DocumentSnapshot): WhatsAppMessageAnalysis {
   const d = doc.data() ?? {};
   return {

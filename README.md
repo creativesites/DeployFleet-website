@@ -1273,6 +1273,54 @@ verified against a live WhatsApp account or a live gateway deployment**
 caveat this project has carried consistently through its DeepSeek/
 Gemini/EmailJS integrations.
 
+**Follow-up round, at explicit user direction, closing two real gaps in
+the first pass.** (1) **The connect flow is now ported from Zuri as
+closely as this single-session scope allows, not simplified** —
+`whatsapp-service/src/transport/baileys.ts` was rewritten against a
+fresh, full read of Zuri's own `transport/baileys.ts`/
+`lib/session-manager.ts`, since the first pass had quietly dropped
+several pieces of hard-won connection logic: the exact `makeWASocket`
+config (`fetchLatestBaileysVersion()` with a cached fallback,
+`Browsers.ubuntu('Chrome')`, `syncFullHistory: true`), a stale-socket
+event guard (`if (sock !== this.sock) return` on every listener — without
+it, a dead socket's late-firing events can corrupt the live one's
+state), a `WriteQueue` serializing `creds.update` writes (concurrent
+writes can otherwise corrupt the auth-state file), a 3-minute QR-scan
+timeout, and — the one genuinely new capability added, since the first
+pass had no pairing-code support at all — the full phone-number pairing
+flow (`POST /connect` with `{ phone }`, a 3-second post-handshake delay,
+up to 3 retries with backoff, and WhatsApp's exact `XXXX-XXXX` code
+formatting). The disconnect-reason handling is also now exact:
+`restartRequired` reconnects immediately (500ms) rather than backing off,
+`badSession` retries up to 3 times before purging auth state (the first
+pass treated it as immediately terminal), and `loggedOut`/
+`connectionReplaced` are still terminal. (2) **A WhatsApp Inbox** (`/admin/whatsapp`,
+`WhatsAppInboxTab.tsx`) — a conversation-list/message-thread/composer
+layout adapted from Zuri's own `apps/web/.../inbox/` (day dividers,
+WhatsApp-style bubble colors, auto-scroll, Enter-to-send via the
+existing `ChatInput` component), stripped of everything Zuri-specific
+DeployFleet doesn't need (Status/stories, voice notes, group chat,
+document/quote-suggestion cards, the AI relationship-intelligence side
+panel, real-time Socket.IO — this polls instead, like every other
+live-ish view in this dashboard). **Structurally, not just by filtering,
+this only ever shows prospects already in DeployFleet's system**: a
+`WhatsAppConversation` row is only ever created by `getOrCreateConversation()`
+after `findProspectByPhone()` matches a real prospect (send route or
+inbound webhook) — there is no code path that creates one for an
+unrecognized number, so the Inbox's conversation list needs no filtering
+logic of its own to enforce that. Building it surfaced and fixed a real
+correctness gap in the first pass: the 24h per-prospect send cooldown
+(§11, meant to stop repeated unanswered cold-outreach pings) would have
+also blocked replying to a prospect who'd just messaged back — fixed
+with a carve-out in `POST .../whatsapp/send` (skip the cooldown when the
+conversation's most recent message is an inbound one newer than
+Winston's last send), and the conversation state a send transitions to
+now distinguishes first outreach (`outreach_sent`) from a reply
+(`awaiting_response`) instead of collapsing both into one state.
+Verified: `tsc`/`eslint`/`vitest`/`next build` all pass clean on the main
+app; `whatsapp-service`'s own `tsc`/`npm run build` pass clean. **Still
+not live-verified** — same standing caveat.
+
 ### Admin dashboard (`/admin`)
 
 **Redesigned as a sidebar-navigated app, not a single route with

@@ -39,10 +39,22 @@ export function createServer() {
     res.json(status);
   });
 
-  /** §14 WA-0's "connect / QR" admin surface — starts a session and returns the QR data URL once one is generated (poll GET /status for it if this returns before the QR event fires). */
-  app.post("/connect", async (_req, res) => {
+  /**
+   * §14 WA-0's "connect / QR / pairing code" admin surface — starts a
+   * session and returns the current status; poll GET /status for the
+   * QR data URL or pairing code once the corresponding event fires
+   * (both arrive a moment after this call returns, same as Zuri's own
+   * two-step QR/pairing-code UX). Mirrors Zuri's own
+   * `startSession(userId, phoneNumber?, forceNewQR?)` shape: omit
+   * `phone` in the body for the QR flow, pass it (digits only, no `+`)
+   * for the pairing-code flow instead — WhatsApp shows a code to enter
+   * under Linked Devices → "Link with phone number instead" rather than
+   * a QR to scan. `forceNewQR: true` discards any saved session first.
+   */
+  app.post("/connect", async (req, res) => {
+    const { phone, forceNewQR } = (req.body ?? {}) as { phone?: string; forceNewQR?: boolean };
     try {
-      await sessionManager.connect();
+      await sessionManager.connect({ phone, forceNewQR });
       res.json({ ok: true, status: sessionManager.getStatus() });
     } catch (err) {
       res.status(500).json({ ok: false, reason: err instanceof Error ? err.message : "connect_failed" });

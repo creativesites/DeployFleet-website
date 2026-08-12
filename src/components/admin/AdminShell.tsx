@@ -27,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/targets", label: "Targets", group: "CRM" },
   { href: "/admin/outreach", label: "Outreach", group: "CRM" },
   { href: "/admin/team", label: "Team", group: "CRM" },
+  { href: "/admin/whatsapp", label: "WhatsApp", group: "CRM" },
   { href: "/admin/inbox", label: "AI Inbox", group: "CRM" },
   { href: "/admin/decisions", label: "Decisions", group: "CRM" },
   { href: "/admin/activity", label: "Activity", group: "CRM" },

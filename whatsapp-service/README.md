@@ -5,6 +5,19 @@ The gateway service designed in [`../docs/whatsapp-intelligence-architecture.md`
 (`creativesites/Personal-Assistant`)'s own `services/whatsapp`, simplified
 to a single WhatsApp session instead of Zuri's multi-tenant one.
 
+**One thing is deliberately *not* simplified: `src/transport/baileys.ts`'s
+connection lifecycle** (the exact `makeWASocket` config, the stale-socket
+event guard, the credential write queue, the QR-scan timeout, and the
+pairing-code request/retry/format logic) is ported as close to Zuri's own
+`services/whatsapp/src/transport/baileys.ts` as this single-session scope
+allows, at explicit user direction — getting that logic reliable in Zuri
+took real, repeated iteration, so this reuses it rather than re-deriving a
+"simpler" version that would have to re-learn the same lessons from
+scratch. What *is* dropped is genuinely orthogonal to connecting:
+multi-tenant `userId` keying, media/location/contact-card/catalog
+handling, and status-post/group-chat support — none of which DeployFleet
+needs.
+
 **This is a separate service from the DeployFleet Next.js app on
 purpose.** Baileys (the WhatsApp Web protocol library this service uses)
 holds a persistent WebSocket connection and needs local disk for session
@@ -44,12 +57,30 @@ from inside this repo.
    and set the *same* value in the main app's `WHATSAPP_GATEWAY_URL`/
    `WHATSAPP_GATEWAY_SECRET` env vars) and `DEPLOYFLEET_WEBHOOK_URL`
    (the deployed Next.js app's `/api/whatsapp/webhook` URL).
-4. **Connect the session**: `POST /connect` (with the bearer secret),
-   then poll `GET /status` until `qrDataUrl` is set, and scan it from
-   WhatsApp → Linked Devices on the number from step 1. There's no admin
-   UI for this yet in `deployfleet_ui`/the Next.js app — a follow-up,
-   not built in this session, since there's nothing to click-test it
-   against without a live gateway anyway.
+4. **Connect the session** — two ways, exactly mirroring Zuri's own
+   `startSession(userId, phoneNumber?, forceNewQR?)` shape (the QR path
+   and pairing-code path are both real, both ported closely from Zuri's
+   own hard-won connection logic, not simplified):
+   - **QR (default)**: `POST /connect` with an empty body, then poll
+     `GET /status` until `qrDataUrl` is set, and scan it from WhatsApp →
+     Linked Devices on the number from step 1. The QR expires after 3
+     minutes with no scan (`status` reports `disconnected`, `reason:
+     timeout`) — call `POST /connect` again for a fresh one.
+   - **Pairing code (no QR)**: `POST /connect` with
+     `{ "phone": "260979046745" }` (digits only, no `+`). Poll
+     `GET /status` until `linkCode` is set (an 8-character code
+     formatted `XXXX-XXXX`), then in WhatsApp go to Linked Devices →
+     "Link with phone number instead" and enter it. Internally this
+     requests the code ~3 seconds after the socket handshake starts and
+     retries up to 3 times with backoff if WhatsApp's servers reject
+     the first attempt — the exact retry shape Zuri's own donor
+     implementation needed to make this reliable.
+
+   Pass `"forceNewQR": true` in either request's body to discard a
+   saved session and start completely fresh. There's no admin UI for
+   this yet in the Next.js app — a follow-up, not built in this
+   session, since there's nothing to click-test it against without a
+   live gateway anyway.
 5. In the main app, set `WHATSAPP_GATEWAY_URL` to this service's public
    URL and `WHATSAPP_GATEWAY_SECRET` to the same secret from step 3.
    Every DeployFleet-side WhatsApp feature (verify/send/inbound
@@ -72,8 +103,8 @@ All routes except `GET /health` require `Authorization: Bearer <WHATSAPP_GATEWAY
 | Route | Purpose |
 |---|---|
 | `GET /health` | Unauthenticated liveness check |
-| `GET /status` | `{ connected, phoneNumber, status, qrDataUrl }` |
-| `POST /connect` | Starts the session (generates a QR if not already linked) |
+| `GET /status` | `{ connected, phoneNumber, status, qrDataUrl, linkCode }` |
+| `POST /connect` | `{ phone?, forceNewQR? }` — starts the session; QR flow if `phone` omitted, pairing-code flow if given |
 | `POST /disconnect` | Logs out and clears the in-memory session |
 | `POST /messages/send` | `{ jid, text }` → `{ waMessageId }` |
 | `POST /whatsapp/check` | `{ phone }` → `{ exists, jid }` — Baileys' `onWhatsApp()`, on-demand only (§15) |

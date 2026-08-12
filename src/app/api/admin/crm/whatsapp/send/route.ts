@@ -7,6 +7,7 @@ import {
   createWhatsAppMessage,
   createWhatsAppSend,
   DAILY_WHATSAPP_CAP,
+  getLastMessageForConversation,
   getLastWhatsAppSendForProspect,
   getOrCreateConversation,
   getProspect,
@@ -66,16 +67,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, reason: "daily_cap_reached", sentToday, cap: DAILY_WHATSAPP_CAP });
   }
 
+  const conversation = await getOrCreateConversation(prospect.id, prospect.whatsappJid);
   const lastSend = await getLastWhatsAppSendForProspect(body.prospectId);
   const isFirstOutreach = lastSend === null;
+
   if (lastSend) {
     const hoursSince = (Date.now() - new Date(lastSend.createdAt).getTime()) / (1000 * 60 * 60);
     if (hoursSince < WHATSAPP_COOLDOWN_HOURS) {
-      return NextResponse.json({ ok: false, reason: "cooldown_active", hoursRemaining: Math.ceil(WHATSAPP_COOLDOWN_HOURS - hoursSince) });
+      // §11's cooldown exists to stop repeated unanswered pings, not to
+      // block replying inside a live conversation — the Inbox needs
+      // same-day back-and-forth to work. Carve-out: if the prospect has
+      // messaged since Winston's last send, this is a reply, not a
+      // second cold open, so the cooldown doesn't apply.
+      const lastMessage = await getLastMessageForConversation(conversation.id);
+      const isGenuineReply = lastMessage?.senderType === "prospect" && lastMessage.whatsappTimestamp > lastSend.createdAt;
+      if (!isGenuineReply) {
+        return NextResponse.json({ ok: false, reason: "cooldown_active", hoursRemaining: Math.ceil(WHATSAPP_COOLDOWN_HOURS - hoursSince) });
+      }
     }
   }
 
-  const conversation = await getOrCreateConversation(prospect.id, prospect.whatsappJid);
   const messageBody = body.message.trim();
   const result = await sendText(prospect.whatsappJid, messageBody);
 
@@ -100,7 +111,13 @@ export async function POST(request: Request) {
     });
     await updateWhatsAppConversation(
       conversation.id,
-      { state: "outreach_sent", lastMessageAt: nowIso, lastMessagePreview: messageBody.slice(0, 160), requiresResponse: false },
+      {
+        state: isFirstOutreach ? "outreach_sent" : "awaiting_response",
+        lastMessageAt: nowIso,
+        lastMessagePreview: messageBody.slice(0, 160),
+        requiresResponse: false,
+        unreadCount: 0,
+      },
       "Winston sent an outbound WhatsApp message."
     );
     await logInteraction(prospect.id, { type: "whatsapp", outcome: null, rawNote: messageBody, createdBy: "Winston" });
