@@ -1,6 +1,10 @@
+import * as fs from "fs/promises";
+import * as path from "path";
 import { BaileysTransport } from "./transport/baileys.js";
 import type { CheckAvailabilityResult, TransportStatus } from "./transport/types.js";
 import { forwardMessageToDeployFleet } from "./webhook.js";
+
+const AUTH_DIR = path.resolve(process.cwd(), ".wa-auth");
 
 /**
  * Simplified from Zuri's `SessionManager`
@@ -58,6 +62,27 @@ export class SessionManager {
 
     this.transport = transport;
     await transport.start();
+  }
+
+  /**
+   * Called once on process boot (see index.ts). Baileys' own
+   * `useMultiFileAuthState()` already reuses saved credentials
+   * transparently whenever `connect()` runs against the same
+   * `.wa-auth` directory — the only thing this adds is *triggering*
+   * that reconnect automatically after a container restart, rather
+   * than requiring a manual `POST /connect` every time (Zuri's own
+   * `restoreAll()` does the equivalent for its multi-tenant case).
+   */
+  async restoreIfSaved(): Promise<void> {
+    const credsPath = path.join(AUTH_DIR, "creds.json");
+    try {
+      const stats = await fs.stat(credsPath);
+      if (!stats.isFile() || stats.size === 0) return;
+    } catch {
+      return; // no saved session — nothing to restore, wait for a manual /connect
+    }
+    console.log("[whatsapp-service] saved session found — auto-restoring...");
+    await this.connect().catch((err) => console.error("[whatsapp-service] auto-restore failed:", err));
   }
 
   async disconnect(): Promise<void> {

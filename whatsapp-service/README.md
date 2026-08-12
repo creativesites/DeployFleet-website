@@ -46,12 +46,20 @@ from inside this repo.
    either of those. A real business SIM or a WhatsApp Business API
    provider's own number both work — Baileys talks to WhatsApp's
    ordinary "linked device" protocol either way.
-2. **Deploy this service somewhere always-on.** Railway is the concrete
-   recommendation (§13/§15) — simplest Docker-based deploy, a persistent
-   volume for `.wa-auth`, no cold starts. Fly.io or a small VPS work
-   identically; this image has zero Railway-specific code. Point the
+2. **Deploy this service somewhere always-on.** Railway is the
+   architecture doc's own concrete recommendation (§13/§15) — simplest
+   Docker-based deploy, a persistent volume for `.wa-auth`, no cold
+   starts — and this image has zero Railway-specific code, so Fly.io or
+   a small VPS work identically. **[`DEPLOY_DEMO_SERVER.md`](./DEPLOY_DEMO_SERVER.md)**
+   is a concrete, ready-to-run runbook for the specific deployment
+   Winston asked for instead: alongside the DeployFleet Odoo demo on
+   `199.192.23.46`, isolated at the container level (own directory, own
+   Compose file, own network, own port) rather than on separate
+   hardware — a deliberate, disclosed deviation from §13's own
+   recommendation, not a silent one. Whichever host you use, point the
    volume at `/app/.wa-auth` (see `Dockerfile`) — losing that directory
-   between deploys means scanning a new QR code.
+   between deploys means scanning a new QR code or requesting a new
+   pairing code.
 3. **Set the two required env vars** (see `.env.example`):
    `WHATSAPP_GATEWAY_SECRET` (generate once, e.g. `openssl rand -hex 32`,
    and set the *same* value in the main app's `WHATSAPP_GATEWAY_URL`/
