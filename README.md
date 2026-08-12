@@ -1207,6 +1207,47 @@ send-reporting UI yet, though `EmailSend` rows do carry `campaignId`;
 and no unsubscribe/opt-out mechanism, appropriate at this tool's actual
 scale (20/day, personal outreach) but worth adding before that changes.
 
+**Redesigned in a later session, after Winston reported the "recipients
+address is empty" send failure was still happening and asked to be able
+to edit every email's body content, not just a separate "Custom"
+option.** The three separate EmailJS templates (each with its own
+baked-in copy) are gone, replaced by **one** thin `{{subject}}`/`{{body}}`
+pass-through template plus deterministic starting text generated
+server-side (`src/lib/email/presets.ts` — the source of truth for that
+copy now, not the EmailJS dashboard). `SendEmailPanel` is a single
+always-editable composer: pick Cold Outreach/Follow-up/Custom to fill
+the subject/body fields (`POST .../email/preset`, no AI), edit freely,
+AI Draft/Revise on top of whatever's there (`POST .../email/draft`,
+unchanged), toggle a real **Preview** that renders exactly what EmailJS
+will send (merge tags already resolved, since resolution now happens
+before the fields are ever shown), and send. The composer is a genuine
+closable panel — starts collapsed to three preset chips, a header ×
+discards the draft. `NEXT_PUBLIC_EMAILJS_TEMPLATE_ID` replaces the three
+old per-template env vars; see `docs/email-templates.md` for the
+migration note and the exact remaining EmailJS dashboard step (Settings
+→ To Email → `{{to_email}}`, the actual root cause of the "recipients
+address is empty" bug, confirmed by reading the send route — this app
+has always sent a correct `to_email` value; it's purely an EmailJS
+per-template dashboard setting most people don't know to set).
+
+**Also new: a "Copy briefing for [teammate]" feature**, the concrete
+half of "make the AI team work cohesively." `AiEmployee` personas
+(Charity/AI SDR, Bupe/AI Sales Coach, etc.) are chat personas Winston
+runs in an external tool, not live agents in this app — this closes the
+"getting context out" half of that round-trip. One click
+(`CopyBriefingButton.tsx`, `POST /api/admin/crm/team/briefing`,
+`src/lib/ai/briefing.ts`) puts a ready-to-paste text block (that
+teammate's role/mission/instructions plus the same
+`compileProspectContext()` every AI call already uses) on the clipboard
+— no AI call, plain deterministic assembly. Wired into both the Employee
+Intelligence tab (per teammate) and the email composer's new "Get input
+from the team" section (purpose-scoped to drafting the email in
+progress). The Employee Intelligence tab's paste box (`InboxPasteBox.tsx`)
+also gained a **History** disclosure — every past entry for that
+employee/prospect pair, not just the one currently under review, since
+previously an applied paste vanished from view entirely with no way to
+see it again.
+
 ### WhatsApp Intelligence & Outreach Automation — Phase 4, all five sub-phases (WA-0–WA-4) built
 
 [`docs/whatsapp-intelligence-architecture.md`](docs/whatsapp-intelligence-architecture.md)

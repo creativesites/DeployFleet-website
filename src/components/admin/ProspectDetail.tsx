@@ -17,6 +17,7 @@ import InboxPasteBox from "./InboxPasteBox";
 import SendEmailPanel from "./SendEmailPanel";
 import SendWhatsAppPanel from "./SendWhatsAppPanel";
 import ProspectContacts from "./ProspectContacts";
+import CopyBriefingButton from "./CopyBriefingButton";
 
 type TabKey = "overview" | "intelligence" | "employees" | "interactions" | "timeline";
 
@@ -363,9 +364,12 @@ export default function ProspectDetail({ id }: { id: string }) {
             ) : (
               employees.map((emp) => (
                 <div key={emp.id}>
-                  <p className="mb-1.5 text-sm font-semibold text-navy">
-                    {emp.name} <span className="font-normal text-muted">— {emp.role}</span>
-                  </p>
+                  <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                    <p className="text-sm font-semibold text-navy">
+                      {emp.name} <span className="font-normal text-muted">— {emp.role}</span>
+                    </p>
+                    <CopyBriefingButton employeeId={emp.id} employeeName={emp.name} prospectId={prospect.id} />
+                  </div>
                   <InboxPasteBox relatedProspectId={prospect.id} relatedEmployeeId={emp.id} />
                 </div>
               ))

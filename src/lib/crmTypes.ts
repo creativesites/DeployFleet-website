@@ -470,7 +470,7 @@ export type EmailSendStatus = "sent" | "failed";
 export const EMAIL_TEMPLATE_LABEL: Record<EmailTemplateKey, string> = {
   cold_outreach: "Cold Outreach",
   followup: "Follow-up",
-  custom: "Custom (edit + AI assist)",
+  custom: "Custom",
 };
 
 export interface EmailSend {

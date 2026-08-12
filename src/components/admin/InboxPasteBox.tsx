@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   INBOX_SOURCE_TYPE_LABEL,
   type ExtractionResult,
@@ -69,8 +69,31 @@ export default function InboxPasteBox({ relatedProspectId, relatedEmployeeId, de
   const [taskProspectIds, setTaskProspectIds] = useState<Record<number, string>>({});
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<string | null>(null);
+  const [history, setHistory] = useState<InboxEntry[] | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const needsProspectResolution = !relatedProspectId;
+  const isScoped = Boolean(relatedProspectId || relatedEmployeeId);
+
+  function loadHistory() {
+    if (!isScoped) return;
+    const params = new URLSearchParams();
+    if (relatedProspectId) params.set("relatedProspectId", relatedProspectId);
+    if (relatedEmployeeId) params.set("relatedEmployeeId", relatedEmployeeId);
+    fetch(`/api/admin/crm/inbox?${params.toString()}`)
+      .then((res) => res.json())
+      .then((data) => data.ok && setHistory(data.entries));
+  }
+
+  // "The team chat needs to be updated too" — previously a past paste
+  // vanished from view the moment it was applied (setEntry(null)), so
+  // there was no way to see what Charity/Bupe/etc. had actually said
+  // about this prospect before, only the live extraction of whatever's
+  // pasted right now. This makes that history visible as a real thread.
+  useEffect(() => {
+    if (isScoped) loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [relatedProspectId, relatedEmployeeId]);
 
   async function submit() {
     if (!rawText.trim()) return;
@@ -95,6 +118,7 @@ export default function InboxPasteBox({ relatedProspectId, relatedEmployeeId, de
       const newEntry: InboxEntry = data.entry;
       setEntry(newEntry);
       if (prospectsList?.ok) setProspects(prospectsList.prospects);
+      loadHistory();
 
       const result: ExtractionResult | null = newEntry.extractionResult;
       const pool: Prospect[] = prospectsList?.ok ? prospectsList.prospects : (prospects ?? []);
@@ -137,6 +161,7 @@ export default function InboxPasteBox({ relatedProspectId, relatedEmployeeId, de
         setApplyResult(`Applied: ${data.createdFacts.length} fact(s), ${data.createdTasks.length} task(s), ${data.createdDecisions.length} decision(s).`);
         setRawText("");
         setEntry(null);
+        loadHistory();
         onApplied?.();
       } else {
         setApplyResult(`Apply failed: ${data.reason ?? "unknown_error"}`);
@@ -176,6 +201,39 @@ export default function InboxPasteBox({ relatedProspectId, relatedEmployeeId, de
           </select>
         </div>
       )}
+
+      {isScoped && history && history.length > 0 && (
+        <div className="mb-3">
+          <button type="button" onClick={() => setShowHistory((v) => !v)} className="text-[11px] font-medium text-muted hover:text-navy">
+            {showHistory ? "Hide history ▲" : `History (${history.length}) ▼`}
+          </button>
+          {showHistory && (
+            <div className="mt-1.5 max-h-64 space-y-2 overflow-y-auto rounded-df-md border border-border bg-canvas p-2">
+              {history.map((h) => {
+                const summary = h.extractionResult;
+                const counts = summary
+                  ? [
+                      summary.facts.length ? `${summary.facts.length} fact${summary.facts.length === 1 ? "" : "s"}` : null,
+                      summary.tasks.length ? `${summary.tasks.length} task${summary.tasks.length === 1 ? "" : "s"}` : null,
+                      summary.decisions.length ? `${summary.decisions.length} decision${summary.decisions.length === 1 ? "" : "s"}` : null,
+                    ].filter(Boolean)
+                  : [];
+                return (
+                  <div key={h.id} className="rounded-df-md border border-border bg-card p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-teal">{INBOX_SOURCE_TYPE_LABEL[h.sourceType]}</span>
+                      <span className="text-[10px] text-muted">{new Date(h.pastedAt).toLocaleString()}</span>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap text-xs text-body">{h.rawText.length > 400 ? `${h.rawText.slice(0, 400)}…` : h.rawText}</p>
+                    {counts.length > 0 && <p className="mt-1 text-[10px] text-muted">Extracted: {counts.join(", ")}</p>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       <ChatInput
         value={rawText}
         onChange={setRawText}
